@@ -294,10 +294,12 @@ class Index {
                                bool onDiskLiterals = false);
 
   size_t passNTriplesFileForVocabulary(const string& ntFile,
-                                       bool onDiskLiterals = false);
+                                       bool onDiskLiterals = false,
+                                       size_t linesPerPartial = 100000000);
 
   void passNTriplesFileIntoIdVector(const string& ntFile, ExtVec& data,
-                                    bool onDiskLiterals = false);
+                                    bool onDiskLiterals = false,
+                                    size_t linesPerPartial = 100000000);
 
   size_t passContextFileForVocabulary(const string& contextFile);
 
