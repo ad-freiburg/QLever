@@ -85,12 +85,28 @@ void Index::createFromTsvFile(const string& tsvFile, const string& onDiskBase,
   openFileHandles();
 }
 
+// _____________________________________________________________________________________________
+Index::ExtVec Index::createExtVecAndVocabFromNTriples(const string& ntFile, 
+    					       const string& onDiskBase,
+					       bool onDiskLiterals) {
+  size_t nofLines = passNTriplesFileForVocabulary(ntFile, onDiskLiterals, NUM_TRIPLES_PER_PARTIAL_VOCAB);
+  if (onDiskLiterals) {
+    _vocab.externalizeLiteralsFromTextFile(onDiskBase + "externalTextFile", onDiskBase + ".literals-index");
+  }
+  // clear vocabulary to save ram (only information from partial binary files used from now on).
+  _vocab = Vocabulary();
+  ExtVec v(nofLines);
+  passNTriplesFileIntoIdVector(ntFile, v, onDiskLiterals, NUM_TRIPLES_PER_PARTIAL_VOCAB);
+  return v;
+}
+   							
 // _____________________________________________________________________________
 void Index::createFromNTriplesFile(const string& ntFile,
                                    const string& onDiskBase,
                                    bool allPermutations, bool onDiskLiterals) {
   _onDiskBase = onDiskBase;
   string indexFilename = _onDiskBase + ".index";
+  /*
   size_t nofLines = passNTriplesFileForVocabulary(ntFile, onDiskLiterals, 10000);
 
   if (onDiskLiterals) {
@@ -102,6 +118,9 @@ void Index::createFromNTriplesFile(const string& ntFile,
   _vocab = Vocabulary();
   ExtVec v(nofLines);
   passNTriplesFileIntoIdVector(ntFile, v, onDiskLiterals, 10000);
+  */
+
+  ExtVec v = createExtVecAndVocabFromNTriples(ntFile, onDiskBase, onDiskLiterals);
   LOG(INFO) << "Sorting for PSO permutation..." << std::endl;
   stxxl::sort(begin(v), end(v), SortByPSO(), STXXL_MEMORY_TO_USE);
   LOG(INFO) << "Sort done." << std::endl;
