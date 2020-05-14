@@ -1,4 +1,4 @@
-FROM ubuntu:18.04 as base
+FROM ubuntu:20.04 as base
 LABEL maintainer="Niklas Schnelle <schnelle@informatik.uni-freiburg.de>"
 ENV LANG C.UTF-8
 ENV LC_ALL C.UTF-8
@@ -18,6 +18,7 @@ RUN cmake -DCMAKE_BUILD_TYPE=Release -DLOGLEVEL=DEBUG -DUSE_PARALLEL=true .. && 
 
 FROM base as runtime
 WORKDIR /app
+ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y wget python3-yaml unzip curl bzip2 pkg-config libicu-dev python3-icu libgomp1
 
 ARG UID=1000
