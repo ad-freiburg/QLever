@@ -40,8 +40,11 @@ void Vocabulary<S, C>::readFromFile(const string& fileName,
         try {
           _words.back().setFloat(ad_utility::convertIndexWordToFloat(str));
         } catch(...) {
-          LOG(ERROR) << "Error converting index word " << str << '\n';
-          throw;
+          // HACK(Hannah): exception for OSM planet data -> change to warning
+          // and continue with code.
+          LOG(WARN) << "Error converting index word " << str << '\n';
+          // LOG(ERROR) << "Error converting index word " << str << '\n';
+          // throw;
         }
         if (!floatsStarted) {
           _lowerBoundFloat = numWords;
