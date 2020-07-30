@@ -15,7 +15,9 @@ const std::string EXTERNAL_LITS_TEXT_FILE_NAME = ".externalized-text";
 // Determines the maximum number of bytes of an internal literal (before
 // compression). Every literal larger as this size is externalized regardless
 // of its language tag
-static const size_t MAX_INTERNAL_LITERAL_BYTES = 1024;
+// HACK(Hannah): For OSM, only keep "POINT(...)" and very short literals.
+static const size_t MAX_INTERNAL_LITERAL_BYTES = 128;
+// static const size_t MAX_INTERNAL_LITERAL_BYTES = 1024;
 
 // How many lines are parsed at once during index creation.
 // Reduce to save RAM

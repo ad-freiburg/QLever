@@ -37,15 +37,19 @@ void Vocabulary<S, C>::readFromFile(const string& fileName,
       auto str = expandPrefix(compr);
       _words.emplace_back();
       if (ad_utility::startsWith(str, VALUE_FLOAT_PREFIX)) {
+        // HACK(Hannah): exception for OSM planet data -> change to warning
+        // and continue with code (setting value to 0.0).
+        float f;
         try {
-          _words.back().setFloat(ad_utility::convertIndexWordToFloat(str));
+          f = ad_utility::convertIndexWordToFloat(str);
+          // _words.back().setFloat(ad_utility::convertIndexWordToFloat(str));
         } catch(...) {
-          // HACK(Hannah): exception for OSM planet data -> change to warning
-          // and continue with code.
           LOG(WARN) << "Error converting index word " << str << '\n';
+          f = 0.0;
           // LOG(ERROR) << "Error converting index word " << str << '\n';
           // throw;
         }
+        _words.back().setFloat(f);
         if (!floatsStarted) {
           _lowerBoundFloat = numWords;
           floatsStarted = true;
