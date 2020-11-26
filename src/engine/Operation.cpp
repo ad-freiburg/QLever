@@ -44,6 +44,17 @@ vector<string> Operation::collectWarnings() const {
   return res;
 }
 
+// ________________________________________________________________________
+void Operation::recursivelySetTimeoutTimer(std::shared_ptr<SyncTimer> timer) {
+  for (auto child : getChildren()) {
+    if (!child) {
+      continue;
+    }
+    child->recursivelySetTimeoutTimer(timer);
+  }
+  _timeoutTimer = std::move(timer);
+}
+
 // Get the result for the subtree rooted at this element.
 // Use existing results if they are already available, otherwise
 // trigger computation.
@@ -57,9 +68,11 @@ shared_ptr<const ResultTable> Operation::getResult(bool isRoot) {
       _executionContext->_pinSubtrees || pinChildIndexScanSizes;
   LOG(TRACE) << "Check cache for Operation result" << endl;
   LOG(TRACE) << "Using key: \n" << cacheKey << endl;
-  auto [newResult, existingResult] = (pinResult)
-                                         ? cache.tryEmplacePinned(cacheKey)
-                                         : cache.tryEmplace(cacheKey);
+  auto cacheProxyResult = (pinResult)
+                                         ? cache.tryEmplacePinned(cacheKey, _executionContext->getAllocator())
+                                         : cache.tryEmplace(cacheKey, _executionContext->getAllocator());
+
+  auto& [newResult, existingResult] = cacheProxyResult._val;
 
   if (pinChildIndexScanSizes) {
     auto lock = getExecutionContext()->getPinnedSizes().wlock();
@@ -73,25 +86,34 @@ shared_ptr<const ResultTable> Operation::getResult(bool isRoot) {
 
   if (newResult) {
     LOG(TRACE) << "Not in the cache, need to compute result" << endl;
+    LOG(DEBUG) << "Free Megabytes in the limit before computing the result:"
+               << (_executionContext->getAllocator().numFreeBytes() >> 20)
+               << std::endl;
     // Passing the raw pointer here is ok as the result shared_ptr remains
     // in scope
     try {
+      if (_timeoutTimer->wlock()->isTimeout()) {
+        throw ad_semsearch::TimeoutException("Timeout in " + getDescriptor());
+      }
       computeResult(newResult->_resTable.get());
+      if (_timeoutTimer->wlock()->isTimeout()) {
+        throw ad_semsearch::TimeoutException("Timeout in " + getDescriptor());
+      }
     } catch (const ad_semsearch::AbortException& e) {
       // A child Operation was aborted, abort this Operation
       // as well. The child already printed
-      abort(newResult, false);
+      abort(cacheProxyResult, false);
       // Continue unwinding the stack
       throw;
     } catch (const std::exception& e) {
       // We are in the innermost level of the exception, so print
-      abort(newResult, true);
+      abort(cacheProxyResult, true);
       // Rethrow as QUERY_ABORTED allowing us to print the Operation
       // only at innermost failure of a recursive call
       throw ad_semsearch::AbortException(e);
     } catch (...) {
       // We are in the innermost level of the exception, so print
-      abort(newResult, true);
+      abort(cacheProxyResult, true);
       LOG(ERROR) << "WEIRD_EXCEPTION not inheriting from std::exception"
                  << endl;
       // Rethrow as QUERY_ABORTED allowing us to print the Operation
@@ -110,7 +132,7 @@ shared_ptr<const ResultTable> Operation::getResult(bool isRoot) {
     newResult->_runtimeInfo = _runtimeInfo;
     // Only now we can let other threads access the result
     // and runtime information
-    newResult->_resTable->finish();
+    cacheProxyResult.finish();
     return newResult->_resTable;
   }
 
@@ -133,4 +155,11 @@ shared_ptr<const ResultTable> Operation::getResult(bool isRoot) {
   _runtimeInfo.addDetail("original_operation_time",
                          existingResult->_runtimeInfo.getOperationTime());
   return existingResult->_resTable;
+}
+
+// ______________________________________________________________________
+void Operation::checkTimeout() const {
+  if (_timeoutTimer->wlock()->isTimeout()) {
+    throw ad_semsearch::TimeoutException("Timeout in " + getDescriptor());
+  }
 }

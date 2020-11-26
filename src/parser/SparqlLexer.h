@@ -11,12 +11,15 @@ struct SparqlToken {
     IRI,
     WS,
     KEYWORD,
+    GROUP_BY,
+    ORDER_BY,
     VARIABLE,
     SYMBOL,
     AGGREGATE,
     RDFLITERAL,
     INTEGER,
-    FLOAT
+    FLOAT,
+    LOGICAL_OR
   };
   static const std::string TYPE_NAMES[];
 
@@ -43,6 +46,8 @@ class SparqlLexer {
   static const std::string PN_LOCAL;
   static const std::string VARNAME;
   static const std::string WS;
+  static const std::string GROUP_BY;
+  static const std::string ORDER_BY;
   static const std::string KEYWORD;
   static const std::string VARIABLE;
   static const std::string SYMBOL;
@@ -55,9 +60,12 @@ class SparqlLexer {
   static const std::string PNAME_LN;
   static const std::string INTEGER;
   static const std::string FLOAT;
+  static const std::string LOGICAL_OR;
 
   static const re2::RE2 RE_IRI;
   static const re2::RE2 RE_WS;
+  static const re2::RE2 RE_GROUP_BY;
+  static const re2::RE2 RE_ORDER_BY;
   static const re2::RE2 RE_KEYWORD;
   static const re2::RE2 RE_VARIABLE;
   static const re2::RE2 RE_SYMBOL;
@@ -65,6 +73,7 @@ class SparqlLexer {
   static const re2::RE2 RE_RDFLITERAL;
   static const re2::RE2 RE_INTEGER;
   static const re2::RE2 RE_FLOAT;
+  static const re2::RE2 RE_LOGICAL_OR;
 
  public:
   SparqlLexer(const std::string& sparql);

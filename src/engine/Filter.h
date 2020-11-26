@@ -21,7 +21,8 @@ class Filter : public Operation {
  public:
   Filter(QueryExecutionContext* qec,
          std::shared_ptr<QueryExecutionTree> subtree,
-         SparqlFilter::FilterType type, string lhs, string rhs);
+         SparqlFilter::FilterType type, string lhs, string rhs,
+         vector<string> additionalLhs, vector<string> additionalPrefixes);
 
   virtual string asString(size_t indent = 0) const override;
 
@@ -56,6 +57,12 @@ class Filter : public Operation {
       }
       if (_type == SparqlFilter::FilterType::NE) {
         return _subtree->getSizeEstimate();
+      } else if (_type == SparqlFilter::FilterType::PREFIX) {
+        // strip the leading ^ and " and assume each character gets rid of 10 percent of the entries
+        double reductionFactor = std::pow(10, std::max(0, static_cast<int>(_rhs.size()) - 2));
+        reductionFactor = std::min(100000000.0, reductionFactor);
+        reductionFactor = std::max(1.0, reductionFactor);
+        return _subtree->getSizeEstimate() / static_cast<size_t>(reductionFactor);
       } else {
         return _subtree->getSizeEstimate() / 50;
       }
@@ -101,6 +108,9 @@ class Filter : public Operation {
   SparqlFilter::FilterType _type;
   string _lhs;
   string _rhs;
+
+  std::vector<string> _additionalLhs;
+  std::vector<string> _additionalPrefixRegexes;
   bool _regexIgnoreCase;
   bool _lhsAsString;
 
@@ -130,6 +140,16 @@ class Filter : public Operation {
    */
   template <ResultTable::ResultType T, int WIDTH>
   void computeFilterFixedValue(IdTableStatic<WIDTH>* res, size_t lhs, Id rhs,
+                               const IdTableStatic<WIDTH>& input,
+                               shared_ptr<const ResultTable> subRes) const;
+  /**
+   * @brief Uses the result type and applies a range filter
+   * ( input[lhs] >= rhs_lower && input[rhs] < rhs_upper)
+   * to subRes and store it in res.
+   *
+   */
+  template <ResultTable::ResultType T, int WIDTH, bool INVERSE=false>
+  void computeFilterRange(IdTableStatic<WIDTH>* res, size_t lhs, Id rhs_lower, Id rhs_upper,
                                const IdTableStatic<WIDTH>& input,
                                shared_ptr<const ResultTable> subRes) const;
 

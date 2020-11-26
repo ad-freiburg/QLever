@@ -91,6 +91,8 @@ void Server::runAcceptLoop() {
 
 // _____________________________________________________________________________
 void Server::process(Socket* client) {
+  ad_utility::Timer totalTimer;
+  totalTimer.start();
   string contentType;
   LOG(DEBUG) << "Waiting for receive call to complete." << endl;
   string request;
@@ -165,6 +167,15 @@ void Server::process(Socket* client) {
         _cache.clearAll();
         lock->clear();
       }
+
+      auto timeoutTimer = std::make_shared<QueryExecutionTree::SyncTimer>(
+          ad_utility::TimeoutTimer::unlimited());
+      if (params.contains("timeout")) {
+        timeoutTimer = std::make_shared<QueryExecutionTree::SyncTimer>(
+            ad_utility::TimeoutTimer::secLimited(
+                static_cast<size_t>(atol(params["timeout"].c_str()))));
+      }
+
       auto it = params.find("send");
       size_t maxSend = MAX_NOF_ROWS_IN_RESULT;
       if (it != params.end()) {
@@ -190,11 +201,15 @@ void Server::process(Socket* client) {
       pq.expandPrefixes();
 
       QueryExecutionContext qec(_index, _engine, &_cache, &_pinnedSizes,
-                                pinSubtrees, pinResult);
+                                _allocator, pinSubtrees, pinResult);
+      // start the shared timeout timer here to also include
+      // the query planning
+      timeoutTimer->wlock()->start();
       QueryPlanner qp(&qec);
       qp.setEnablePatternTrick(_enablePatternTrick);
       QueryExecutionTree qet = qp.createExecutionTree(pq);
       qet.isRoot() = true;  // allow pinning of the final result
+      qet.recursivelySetTimeoutTimer(timeoutTimer);
       LOG(TRACE) << qet.asString() << std::endl;
 
       if (ad_utility::getLowercase(params["action"]) == "csv_export") {
@@ -211,7 +226,7 @@ void Server::process(Socket* client) {
             "Content-Disposition: attachment;filename=export.tsv";
       } else {
         // Normal case: JSON response
-        response = composeResponseJson(pq, qet, maxSend);
+        response = composeResponseJson(pq, qet, maxSend, &totalTimer);
         contentType = "application/json";
       }
       // Print the runtime info. This needs to be done after the query
@@ -349,7 +364,10 @@ string Server::create400HttpResponse() const {
 // _____________________________________________________________________________
 string Server::composeResponseJson(const ParsedQuery& query,
                                    const QueryExecutionTree& qet,
-                                   size_t maxSend) const {
+                                   size_t maxSend, ad_utility::Timer* totalTimer) const {
+  if (!totalTimer) {
+    totalTimer = &_requestProcessingTimer;
+  }
   // TODO(schnelle) we really should use a json library
   // such as https://github.com/nlohmann/json
   shared_ptr<const ResultTable> rt = qet.getResult();
@@ -371,8 +389,8 @@ string Server::composeResponseJson(const ParsedQuery& query,
   {
     size_t limit = MAX_NOF_ROWS_IN_RESULT;
     size_t offset = 0;
-    if (query._limit.size() > 0) {
-      limit = static_cast<size_t>(atol(query._limit.c_str()));
+    if (query._limit) {
+      limit = query._limit.value();
     }
     if (query._offset.size() > 0) {
       offset = static_cast<size_t>(atol(query._offset.c_str()));
@@ -383,8 +401,10 @@ string Server::composeResponseJson(const ParsedQuery& query,
     _requestProcessingTimer.stop();
   }
 
+
+  totalTimer->stop();
   j["time"]["total"] =
-      std::to_string(_requestProcessingTimer.usecs() / 1000.0) + "ms";
+      std::to_string(totalTimer->usecs() / 1000.0) + "ms";
   j["time"]["computeResult"] = std::to_string(compResultUsecs / 1000.0) + "ms";
 
   return j.dump(4);
@@ -397,8 +417,8 @@ string Server::composeResponseSepValues(const ParsedQuery& query,
   std::ostringstream os;
   size_t limit = std::numeric_limits<size_t>::max();
   size_t offset = 0;
-  if (query._limit.size() > 0) {
-    limit = static_cast<size_t>(atol(query._limit.c_str()));
+  if (query._limit) {
+    limit = query._limit.value();
   }
   if (query._offset.size() > 0) {
     offset = static_cast<size_t>(atol(query._offset.c_str()));

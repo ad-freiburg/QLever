@@ -9,6 +9,7 @@
 
 #include "../parser/ParseException.h"
 #include "../parser/ParsedQuery.h"
+#include "Bind.h"
 #include "CountAvailablePredicates.h"
 #include "Distinct.h"
 #include "Filter.h"
@@ -16,6 +17,7 @@
 #include "HasPredicateScan.h"
 #include "IndexScan.h"
 #include "Join.h"
+#include "Minus.h"
 #include "MultiColumnJoin.h"
 #include "OptionalJoin.h"
 #include "OrderBy.h"
@@ -59,6 +61,18 @@ QueryExecutionTree QueryPlanner::createExecutionTree(ParsedQuery& pq) {
 
   // Add the query level modifications
 
+
+  // if we do not do grouping/distict/etc then we can optimize by letting
+  // the last operation be limited
+  // TODO<joka921>: Maybe this information can also be integrated into the query planner's
+  // decisions
+
+  if (pq._limit && !doGrouping && pq._havingClauses.empty() && !pq._distinct && pq._orderBy.empty()) {
+    for (auto& p : plans.back()) {
+      p.getExecutionTree()->setLimit(pq._limit.value());
+    }
+  }
+
   // GROUP BY
   if (doGrouping && !usePatternTrick) {
     plans.emplace_back(getGroupByRow(pq, plans));
@@ -90,8 +104,9 @@ QueryExecutionTree QueryPlanner::createExecutionTree(ParsedQuery& pq) {
 
   AD_CHECK_GT(lastRow.size(), 0);
   auto minInd = findCheapestExecutionTree(lastRow);
-
-  lastRow[minInd]._isOptional = pq._rootGraphPattern._optional;
+  if (pq._rootGraphPattern._optional) {
+    lastRow[minInd].type = SubtreePlan::OPTIONAL;
+  }
 
   SubtreePlan final = lastRow[minInd];
   final._qet->setTextLimit(getTextLimit(pq._textLimit));
@@ -115,6 +130,24 @@ std::vector<QueryPlanner::SubtreePlan> QueryPlanner::optimize(
   // that create no single binding for a variable "by accident".
   ad_utility::HashSet<std::string> boundVariables;
 
+  auto optimizeCommutativ = [this](const auto& triples, const auto& plans,
+                                   const auto& filters) {
+    // we are an optional, optimization across is forbidden.
+    // optimize all previously collected candidates, and then perform
+    // an optional join.
+    auto tg = createTripleGraph(&triples);
+    LOG(TRACE) << "Collapse text cliques..." << std::endl;
+    tg.collapseTextCliques();
+    LOG(TRACE) << "Collapse text cliques done." << std::endl;
+    // always apply all filters to be safe.
+    // TODO<joka921> it could be possible, to allow the DpTab to leave
+    // results unfiltered and add the filters later, but this has to be
+    // carefully checked and I currently see no benefit.
+    // TODO<joka921> In fact, for the case of REGEX filters, it could be
+    // beneficial to postpone them if possible
+    return fillDpTab(tg, filters, plans).back();
+  };
+
   // find a single best candidate for a given graph pattern
   auto optimizeSingle = [this](const auto pattern) -> SubtreePlan {
     auto v = optimize(pattern);
@@ -131,7 +164,8 @@ std::vector<QueryPlanner::SubtreePlan> QueryPlanner::optimize(
   // Can either be passed a BasicGraphPattern directly or a set
   // of possible candidate plans for a single child pattern
   auto joinCandidates = [this, &candidatePlans, &candidateTriples,
-                         &boundVariables, &rootPattern](auto&& v) {
+                         &optimizeCommutativ, &boundVariables,
+                         &rootPattern](auto&& v) {
     if constexpr (std::is_same_v<GraphPatternOperation::BasicGraphPattern,
                                  std::decay_t<decltype(v)>>) {
       // we only consist of triples, store them and all the bound variables.
@@ -150,6 +184,32 @@ std::vector<QueryPlanner::SubtreePlan> QueryPlanner::optimize(
           candidateTriples._whereClauseTriples.end(),
           std::make_move_iterator(v._whereClauseTriples.begin()),
           std::make_move_iterator(v._whereClauseTriples.end()));
+    } else if constexpr (std::is_same_v<GraphPatternOperation::Bind,
+                                        std::decay_t<decltype(v)>>) {
+      if (boundVariables.count(v._target)) {
+        AD_THROW(ad_semsearch::Exception::BAD_QUERY,
+                 "The target variable of a BIND must not be used before the "
+                 "BIND clause");
+      }
+      boundVariables.insert(v._target);
+
+      auto lastRow = optimizeCommutativ(candidateTriples, candidatePlans,
+                                        rootPattern->_filters);
+      candidateTriples._whereClauseTriples.clear();
+      candidatePlans.clear();
+      candidatePlans.emplace_back();
+      for (const auto& a : lastRow) {
+        // create a copy of the Bind prototype and add the corresponding subtree
+        SubtreePlan plan(_qec);
+        std::shared_ptr<Bind> op = std::make_shared<Bind>(_qec, a._qet, v);
+        plan._idsOfIncludedFilters = a._idsOfIncludedFilters;
+        // TODO<joka921> : should we make this setVariableColumns call a part
+        // of setOperation in the queryExecutionTree, since it is invariant?
+        plan._qet->setVariableColumns(op->getVariableColumns());
+        plan._qet->setOperation(QueryExecutionTree::OperationType::BIND, op);
+        candidatePlans.back().push_back(std::move(plan));
+      }
+      return;
     } else {
       static_assert(
           std::is_same_v<std::vector<SubtreePlan>, std::decay_t<decltype(v)>>);
@@ -161,7 +221,7 @@ std::vector<QueryPlanner::SubtreePlan> QueryPlanner::optimize(
 
       // optionals that occur before any of their variables have been bound
       // actually behave like ordinary (Group)GraphPatterns
-      if (v[0]._isOptional) {
+      if (v[0].type == SubtreePlan::OPTIONAL) {
         auto vc = v[0]._qet->getVariableColumns();
         if (std::all_of(vc.begin(), vc.end(),
                         [&boundVariables](const auto& el) {
@@ -170,14 +230,14 @@ std::vector<QueryPlanner::SubtreePlan> QueryPlanner::optimize(
           // all variables in the optional are unbound so far, so this optional
           // actually is not an optional.
           for (auto& vec : v) {
-            vec._isOptional = false;
+            vec.type = SubtreePlan::BASIC;
           }
         }
       }
 
-      // if our input is not optional, this means we still can arbitrarily
-      // optimize among our candidates and just append our new candidates.
-      if (!v[0]._isOptional) {
+      // if our input is not optional and not a minus, we can still arbitrarily
+      // optimize among our candidates.
+      if (v[0].type == SubtreePlan::BASIC) {
         auto vc = v[0]._qet->getVariableColumns();
         std::for_each(vc.begin(), vc.end(), [&boundVariables](const auto& el) {
           boundVariables.insert(el.first);
@@ -186,47 +246,39 @@ std::vector<QueryPlanner::SubtreePlan> QueryPlanner::optimize(
         return;
       }
 
-      // we are an optional, optimization across is forbidden.
+      // we are an optional or minus join, optimization across is forbidden.
       // optimize all previously collected candidates, and then perform
       // an optional join.
-      auto tg = createTripleGraph(&candidateTriples);
-      LOG(TRACE) << "Collapse text cliques..." << std::endl;
-      tg.collapseTextCliques();
-      LOG(TRACE) << "Collapse text cliques done." << std::endl;
-      // always apply all filters to be safe.
-      // TODO<joka921> it could be possible, to allow the DpTab to leave
-      // results unfiltered and add the filters later, but this has to be
-      // carefully checked and I currently see no benefit.
-      auto lastRow =
-          fillDpTab(tg, rootPattern->_filters, candidatePlans).back();
+      auto lastRow = optimizeCommutativ(candidateTriples, candidatePlans,
+                                        rootPattern->_filters);
       candidateTriples._whereClauseTriples.clear();
       candidatePlans.clear();
 
-      // join all the candidates plans for the complete previous inputs
-      // in an optional way with all the candidates for the contents of
-      // the optional join.
-      std::vector<SubtreePlan> optJoinCandidates;
-      for (const auto& a : lastRow) {
-        for (const auto& b : v) {
-          auto vec = createJoinCandidates(a, b, std::nullopt);
-          optJoinCandidates.insert(optJoinCandidates.end(),
-                                   std::make_move_iterator(vec.begin()),
-                                   std::make_move_iterator(vec.end()));
+      std::vector<SubtreePlan> nextCandidates;
+        // join all the candidates plans for the complete previous inputs
+        // in an optional way with all the candidates for the contents of
+        // the optional join.
+        for (const auto& a : lastRow) {
+          for (const auto& b : v) {
+            auto vec = createJoinCandidates(a, b, std::nullopt);
+            nextCandidates.insert(nextCandidates.end(),
+                                  std::make_move_iterator(vec.begin()),
+                                  std::make_move_iterator(vec.end()));
+          }
         }
-      }
 
-      // keep the best found candidate, which is now a non-optional "so far"
-      // solution which can be combined with all upcoming children until we hit
-      // the next optional
-      // TODO<joka921> Also keep one candidate per Ordering to make even better
-      // plans at this step
-      if (optJoinCandidates.empty()) {
-        throw std::runtime_error(
-            "Could not find a single candidate join for two optimized Graph "
-            "patterns. Please report to the developers");
-      }
-      auto idx = findCheapestExecutionTree(optJoinCandidates);
-      candidatePlans.push_back({std::move(optJoinCandidates[idx])});
+        // keep the best found candidate, which is now a non-optional "so far"
+        // solution which can be combined with all upcoming children until we
+        // hit the next optional
+        // TODO<joka921> Also keep one candidate per Ordering to make even
+        // better plans at this step
+        if (nextCandidates.empty()) {
+          throw std::runtime_error(
+              "Could not find a single candidate join for two optimized Graph "
+              "patterns. Please report to the developers");
+        }
+        auto idx = findCheapestExecutionTree(nextCandidates);
+        candidatePlans.push_back({std::move(nextCandidates[idx])});
     }
   };
 
@@ -241,7 +293,7 @@ std::vector<QueryPlanner::SubtreePlan> QueryPlanner::optimize(
         auto candidates = optimize(&arg._child);
         if constexpr (std::is_same_v<T, GraphPatternOperation::Optional>) {
           for (auto& c : candidates) {
-            c._isOptional = true;
+            c.type = SubtreePlan::OPTIONAL;
           }
         }
         joinCandidates(std::move(candidates));
@@ -329,6 +381,14 @@ std::vector<QueryPlanner::SubtreePlan> QueryPlanner::optimize(
         valuesPlan._qet->setVariableColumns(op->getVariableColumns());
         joinCandidates(std::vector{std::move(valuesPlan)});
 
+      } else if constexpr (std::is_same_v<T, GraphPatternOperation::Minus>) {
+        auto candidates = optimize(&arg._child);
+        for (auto& c : candidates) {
+          c.type = SubtreePlan::MINUS;
+        }
+        joinCandidates(std::move(candidates));
+      } else if constexpr (std::is_same_v<T, GraphPatternOperation::Bind>) {
+        joinCandidates(arg);
       } else {
         static_assert(
             std::is_same_v<T, GraphPatternOperation::BasicGraphPattern>);
@@ -502,11 +562,20 @@ bool QueryPlanner::checkUsePatternTrick(
                 break;
               }
             }
+          } else if constexpr (std::is_same_v<T, GraphPatternOperation::Bind>) {
+            for (const std::string* v : arg.strings()) {
+              if (*v == t._o) {
+                usePatternTrick = false;
+                break;
+              }
+            }
+
           } else {
             static_assert(
                 std::is_same_v<T, GraphPatternOperation::TransPath> ||
                 std::is_same_v<T, GraphPatternOperation::BasicGraphPattern> ||
-                std::is_same_v<T, GraphPatternOperation::Values>);
+                std::is_same_v<T, GraphPatternOperation::Values> ||
+                std::is_same_v<T, GraphPatternOperation::Minus>);
           }
           // Transitive paths cannot yet exist in the query. They could also
           // not contain the variables we are interested in.
@@ -522,7 +591,8 @@ bool QueryPlanner::checkUsePatternTrick(
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, GraphPatternOperation::Optional> ||
                           std::is_same_v<
-                              T, GraphPatternOperation::GroupGraphPattern>) {
+                              T, GraphPatternOperation::GroupGraphPattern> ||
+                          std::is_same_v<T, GraphPatternOperation::Minus>) {
               graphsToProcess.push_back(&arg._child);
 
             } else if constexpr (std::is_same_v<T,
@@ -554,7 +624,14 @@ bool QueryPlanner::checkUsePatternTrick(
                   break;
                 }
               }
-
+            } else if constexpr (std::is_same_v<T,
+                                                GraphPatternOperation::Bind>) {
+              for (const std::string* v : arg.strings()) {
+                if (*v == t._o) {
+                  usePatternTrick = false;
+                  break;
+                }
+              }
             } else {
               static_assert(
                   std::is_same_v<T, GraphPatternOperation::TransPath>);
@@ -1139,9 +1216,9 @@ vector<QueryPlanner::SubtreePlan> QueryPlanner::seedWithScansAndText(
                                    scan);
             scanTree->setVariableColumn(node._triple._s, 0);
             scanTree->setVariableColumn(filterVar, 1);
-            auto filter = std::make_shared<Filter>(_qec, scanTree,
-                                                   SparqlFilter::FilterType::EQ,
-                                                   node._triple._s, filterVar);
+            auto filter = std::make_shared<Filter>(
+                _qec, scanTree, SparqlFilter::FilterType::EQ, node._triple._s,
+                filterVar, vector<string>{}, vector<string>{});
             tree.setOperation(QueryExecutionTree::OperationType::FILTER,
                               filter);
             tree.setVariableColumns(filter->getVariableColumns());
@@ -1797,7 +1874,7 @@ vector<QueryPlanner::SubtreePlan> QueryPlanner::merge(
 // _____________________________________________________________________________
 QueryPlanner::SubtreePlan QueryPlanner::optionalJoin(
     const SubtreePlan& a, const SubtreePlan& b) const {
-  if (a._isOptional && b._isOptional) {
+  if (a.type == SubtreePlan::OPTIONAL && b.type == SubtreePlan::OPTIONAL) {
     throw std::runtime_error(
         "Trying to join two optional patterns. This should never"
         "be called anymore since it is illegal. Please contact the developers");
@@ -1843,13 +1920,33 @@ QueryPlanner::SubtreePlan QueryPlanner::optionalJoin(
   }
 
   auto join = std::make_shared<OptionalJoin>(
-      _qec, aSorted ? a._qet : orderByPlanA._qet, a._isOptional,
-      bSorted ? b._qet : orderByPlanB._qet, b._isOptional, jcs);
+      _qec, aSorted ? a._qet : orderByPlanA._qet,
+      a.type == SubtreePlan::OPTIONAL, bSorted ? b._qet : orderByPlanB._qet,
+      b.type == SubtreePlan::OPTIONAL, jcs);
   QueryExecutionTree& tree = *plan._qet;
   tree.setVariableColumns(join->getVariableColumns());
   tree.setOperation(QueryExecutionTree::OPTIONAL_JOIN, join);
 
-  plan._isOptional = false;
+  plan.type = SubtreePlan::BASIC;
+  return plan;
+}
+
+// _____________________________________________________________________________
+QueryPlanner::SubtreePlan QueryPlanner::minus(const SubtreePlan& a,
+                                              const SubtreePlan& b) const {
+  if (a.type == SubtreePlan::MINUS || b.type != SubtreePlan::MINUS) {
+    throw std::runtime_error("Can only subtract the right side from the left.");
+  }
+  SubtreePlan plan(_qec);
+
+  std::vector<std::array<Id, 2>> jcs = getJoinColumns(a, b);
+
+  auto join = std::make_shared<Minus>(_qec, a._qet, b._qet, jcs);
+  QueryExecutionTree& tree = *plan._qet;
+  tree.setVariableColumns(join->getVariableColumns());
+  tree.setOperation(QueryExecutionTree::MINUS, join);
+
+  plan.type = SubtreePlan::BASIC;
   return plan;
 }
 
@@ -2050,7 +2147,12 @@ void QueryPlanner::applyFiltersIfPossible(
       if (((row[n]._idsOfIncludedFilters >> i) & 1) != 0) {
         continue;
       }
-      if (row[n]._qet->varCovered(filters[i]._lhs) &&
+      if (row[n]._qet.get()->varCovered(filters[i]._lhs) &&
+          std::all_of(filters[i]._additionalLhs.begin(),
+                      filters[i]._additionalLhs.end(),
+                      [&row, &n](const auto& lhs) {
+                        return row[n]._qet->varCovered(lhs);
+                      }) &&
           (!isVariable(filters[i]._rhs) ||
            row[n]._qet->varCovered(filters[i]._rhs))) {
         // Apply this filter.
@@ -2058,7 +2160,7 @@ void QueryPlanner::applyFiltersIfPossible(
         newPlan._idsOfIncludedFilters = row[n]._idsOfIncludedFilters;
         newPlan._idsOfIncludedFilters |= (size_t(1) << i);
         newPlan._idsOfIncludedNodes = row[n]._idsOfIncludedNodes;
-        newPlan._isOptional = row[n]._isOptional;
+        newPlan.type = row[n].type;
         auto& tree = *newPlan._qet;
         tree.setOperation(QueryExecutionTree::FILTER,
                           createFilterOperation(filters[i], row[n]));
@@ -2078,7 +2180,8 @@ void QueryPlanner::applyFiltersIfPossible(
 std::shared_ptr<Operation> QueryPlanner::createFilterOperation(
     const SparqlFilter& filter, const SubtreePlan& parent) const {
   std::shared_ptr<Filter> op = std::make_shared<Filter>(
-      _qec, parent._qet, filter._type, filter._lhs, filter._rhs);
+      _qec, parent._qet, filter._type, filter._lhs, filter._rhs,
+      filter._additionalLhs, filter._additionalPrefixes);
   op->setLhsAsString(filter._lhsAsString);
   if (filter._type == SparqlFilter::REGEX) {
     op->setRegexIgnoreCase(filter._regexIgnoreCase);
@@ -2637,8 +2740,25 @@ std::vector<QueryPlanner::SubtreePlan> QueryPlanner::createJoinCandidates(
       return candidates;
     }
 
+    if (a.type == SubtreePlan::MINUS) {
+      AD_THROW(ad_semsearch::Exception::BAD_QUERY,
+               "MINUS can only appear after"
+               " another graph pattern.");
+    }
+    if (b.type == SubtreePlan::MINUS) {
+      if (a.type == SubtreePlan::OPTIONAL) {
+        // This case shouldn't happen. If the first pattern is OPTIONAL, it
+        // is made non optional earlier. If a minus occurs after an optional
+        // further into the query that optional should be resolved by now.
+        AD_THROW(ad_semsearch::Exception::BAD_QUERY,
+                 "Cannot subtract from an"
+                 "optional graph pattern.");
+      }
+      return std::vector{minus(a, b)};
+    }
+
     // TODO<joka921> OPTIONAL JOINS are not symmetric!
-    if (a._isOptional || b._isOptional) {
+    if (a.type == SubtreePlan::OPTIONAL || b.type == SubtreePlan::OPTIONAL) {
       // Join the two optional columns using an optional join
       return std::vector{optionalJoin(a, b)};
     }

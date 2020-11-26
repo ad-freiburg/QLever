@@ -48,6 +48,10 @@ string Join::asString(size_t indent) const {
   }
   os << "|X|\n"
      << _right->asString(indent) << " join-column: [" << _rightJoinCol << "]";
+
+  if (_limit) {
+    os << "LIMIT " << _limit.value();
+  }
   return os.str();
 }
 
@@ -59,6 +63,10 @@ string Join::getDescriptor() const {
       joinVar = p.first;
       break;
     }
+  }
+
+  if (_limit) {
+    joinVar += " Limit" + std::to_string(_limit.value());
   }
   return "Join on " + joinVar;
 }
@@ -335,7 +343,7 @@ void Join::doComputeJoinWithFullScanDummyLeft(const IdTable& ndr,
     } else {
       // Do a scan.
       LOG(TRACE) << "Inner scan with ID: " << currentJoinId << endl;
-      IdTable jr(2);
+      IdTable jr(2, _executionContext->getAllocator());
       scan(currentJoinId, &jr);
       LOG(TRACE) << "Got #items: " << jr.size() << endl;
       // Build the cross product.
@@ -348,7 +356,7 @@ void Join::doComputeJoinWithFullScanDummyLeft(const IdTable& ndr,
   }
   // Do the scan for the final element.
   LOG(TRACE) << "Inner scan with ID: " << currentJoinId << endl;
-  IdTable jr(2);
+  IdTable jr(2, _executionContext->getAllocator());
   scan(currentJoinId, &jr);
   LOG(TRACE) << "Got #items: " << jr.size() << endl;
   // Build the cross product.
@@ -376,7 +384,9 @@ void Join::doComputeJoinWithFullScanDummyRight(const IdTable& ndr,
     } else {
       // Do a scan.
       LOG(TRACE) << "Inner scan with ID: " << currentJoinId << endl;
-      IdTable jr(2);
+      IdTable jr(2, _executionContext->getAllocator());
+      checkTimeout();  // the scan is a disk operation, so we can check the
+      // timeout frequently
       scan(currentJoinId, &jr);
       LOG(TRACE) << "Got #items: " << jr.size() << endl;
       // Build the cross product.
@@ -389,7 +399,7 @@ void Join::doComputeJoinWithFullScanDummyRight(const IdTable& ndr,
   }
   // Do the scan for the final element.
   LOG(TRACE) << "Inner scan with ID: " << currentJoinId << endl;
-  IdTable jr(2);
+  IdTable jr(2, _executionContext->getAllocator());
   scan(currentJoinId, &jr);
   LOG(TRACE) << "Got #items: " << jr.size() << endl;
   // Build the cross product.
@@ -510,6 +520,8 @@ void Join::join(const IdTable& dynA, size_t jc1, const IdTable& dynB,
     return;
   }
 
+  size_t limit = _limit.value_or(std::numeric_limits<size_t>::max());
+
   IdTableStatic<OUT_WIDTH> result = dynRes->moveToStatic<OUT_WIDTH>();
   // Cannot just switch l1 and l2 around because the order of
   // items in the result tuples is important.
@@ -525,6 +537,9 @@ void Join::join(const IdTable& dynA, size_t jc1, const IdTable& dynB,
     while (i < a.size() && j < b.size()) {
       while (a(i, jc1) < b(j, jc2)) {
         ++i;
+        if (i% (1024 * 16) == 0) {
+          checkTimeout();
+        }
         if (i >= a.size()) {
           goto finish;
         }
@@ -532,6 +547,9 @@ void Join::join(const IdTable& dynA, size_t jc1, const IdTable& dynB,
 
       while (b(j, jc2) < a(i, jc1)) {
         ++j;
+        if (j% (1024 * 16) == 0) {
+          checkTimeout();
+        }
         if (j >= b.size()) {
           goto finish;
         }
@@ -558,7 +576,15 @@ void Join::join(const IdTable& dynA, size_t jc1, const IdTable& dynB,
             result(backIndex, h + a.cols() - 1) = b(j, h);
           }
 
+          // check for the limit
+          if (result.size() >= limit) {
+            goto finish;
+          }
+
           ++j;
+          if (j% (1024 * 4) == 0) {
+            checkTimeout();
+          }
           if (j >= b.size()) {
             // The next i might still match
             break;

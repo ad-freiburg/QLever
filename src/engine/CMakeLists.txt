@@ -29,7 +29,9 @@ add_library(engine
         MultiColumnJoin.cpp MultiColumnJoin.h
         TransitivePath.cpp TransitivePath.h
         Values.cpp Values.h
+        Bind.cpp Bind.h
         IdTable.h
+        Minus.h Minus.cpp
         )
 
 target_link_libraries(engine index parser)

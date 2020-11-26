@@ -12,6 +12,7 @@
 #include "../util/Conversions.h"
 #include "../util/StringUtils.h"
 #include "ParseException.h"
+#include "Tokenizer.h"
 
 using std::string;
 using std::vector;
@@ -55,7 +56,7 @@ string ParsedQuery::asString() const {
   os << "\nWHERE: \n";
   _rootGraphPattern.toString(os, 1);
 
-  os << "\nLIMIT: " << (_limit.size() > 0 ? _limit : "no limit specified");
+  os << "\nLIMIT: " << (_limit ? std::to_string(_limit.value()) : "no limit specified");
   os << "\nTEXTLIMIT: "
      << (_textLimit.size() > 0 ? _textLimit : "no limit specified");
   os << "\nOFFSET: " << (_offset.size() > 0 ? _offset : "no offset specified");
@@ -253,7 +254,10 @@ void ParsedQuery::expandPrefixes() {
 
   for (auto& f : _rootGraphPattern._filters) {
     expandPrefix(f._lhs, prefixMap);
-    expandPrefix(f._rhs, prefixMap);
+    // TODO<joka921>: proper type system for variable/regex/iri/etc
+    if (f._type != SparqlFilter::REGEX) {
+      expandPrefix(f._rhs, prefixMap);
+    }
   }
 
   vector<GraphPattern*> graphPatterns;
@@ -279,7 +283,8 @@ void ParsedQuery::expandPrefixes() {
         } else if constexpr (std::is_same_v<T,
                                             GraphPatternOperation::Optional> ||
                              std::is_same_v<
-                                 T, GraphPatternOperation::GroupGraphPattern>) {
+                                 T, GraphPatternOperation::GroupGraphPattern> ||
+                             std::is_same_v<T, GraphPatternOperation::Minus>) {
           graphPatterns.push_back(&arg._child);
         } else if constexpr (std::is_same_v<T, GraphPatternOperation::Union>) {
           graphPatterns.push_back(&arg._child1);
@@ -291,6 +296,11 @@ void ParsedQuery::expandPrefixes() {
             }
           }
 
+        } else if constexpr (std::is_same_v<T, GraphPatternOperation::Bind>) {
+          for (auto ptr :
+               std::visit([](auto&& x) { return x.strings(); }, arg._input)) {
+            expandPrefix(*ptr, prefixMap);
+          }
         } else {
           static_assert(
               std::is_same_v<T, GraphPatternOperation::BasicGraphPattern>);
@@ -365,14 +375,10 @@ void ParsedQuery::expandPrefix(
     if (i != string::npos && i >= from &&
         prefixMap.count(item.substr(from, i - from)) > 0) {
       string prefixUri = prefixMap.find(item.substr(from, i - from))->second;
-      if (from == 0) {
-        item = prefixUri.substr(0, prefixUri.size() - 1) + item.substr(i + 1) +
-               '>';
-      } else {
-        item = item.substr(0, from) +
-               prefixUri.substr(0, prefixUri.size() - 1) + item.substr(i + 1) +
-               '>';
-      }
+      item = item.substr(0, from) +
+             prefixUri.substr(0, prefixUri.size() - 1) + item.substr(i + 1) +
+             '>';
+      item = TurtleToken::unescapePrefixedIri(item);
     }
     if (langtag) {
       item =
@@ -540,7 +546,8 @@ void ParsedQuery::GraphPattern::recomputeIds(size_t* id_count) {
         arg._child2.recomputeIds(id_count);
       } else if constexpr (std::is_same_v<T, GraphPatternOperation::Optional> ||
                            std::is_same_v<
-                               T, GraphPatternOperation::GroupGraphPattern>) {
+                               T, GraphPatternOperation::GroupGraphPattern> ||
+                           std::is_same_v<T, GraphPatternOperation::Minus>) {
         arg._child.recomputeIds(id_count);
       } else if constexpr (std::is_same_v<T,
                                           GraphPatternOperation::TransPath>) {
@@ -550,7 +557,8 @@ void ParsedQuery::GraphPattern::recomputeIds(size_t* id_count) {
       } else {
         static_assert(
             std::is_same_v<T, GraphPatternOperation::Subquery> ||
-            std::is_same_v<T, GraphPatternOperation::BasicGraphPattern>);
+            std::is_same_v<T, GraphPatternOperation::BasicGraphPattern> ||
+            std::is_same_v<T, GraphPatternOperation::Bind>);
         // subquery children have their own id space
         // TODO:joka921 look at the optimizer if it is ok, that
         // BasicGraphPatterns and Values have no ids at all. at the same time
@@ -609,6 +617,12 @@ void GraphPatternOperation::toString(std::ostringstream& os,
         os << arg._whereClauseTriples.back().asString();
       }
 
+    } else if constexpr (std::is_same_v<T, Bind>) {
+      os << "Some kind of BIND\n";
+      // TODO<joka921> proper ToString (are they used for something?)
+    } else if constexpr (std::is_same_v<T, Minus>) {
+      os << "MINUS ";
+      arg._child.toString(os, indentation);
     } else {
       static_assert(std::is_same_v<T, TransPath>);
       os << "TRANS PATH from " << arg._left << " to " << arg._right

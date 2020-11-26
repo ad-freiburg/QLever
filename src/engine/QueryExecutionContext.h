@@ -11,6 +11,7 @@
 #include "../global/Constants.h"
 #include "../index/Index.h"
 #include "../util/Cache.h"
+#include "../util/CacheAdapter.h"
 #include "../util/Log.h"
 #include "../util/Synchronized.h"
 #include "./Engine.h"
@@ -23,7 +24,9 @@ using std::string;
 using std::vector;
 
 struct CacheValue {
-  CacheValue() : _resTable(std::make_shared<ResultTable>()), _runtimeInfo() {}
+  CacheValue(ad_utility::LimitedAllocator<Id> alloc)
+      : _resTable(std::make_shared<ResultTable>(std::move(alloc))),
+        _runtimeInfo() {}
   std::shared_ptr<ResultTable> _resTable;
   RuntimeInformation _runtimeInfo;
   [[nodiscard]] size_t size() const {
@@ -31,7 +34,14 @@ struct CacheValue {
   }
 };
 
-typedef ad_utility::LRUCache<string, CacheValue> SubtreeCache;
+// TODO: In C++ 20 this can be a lambda with a default constructor
+namespace detail {
+struct finisher {
+  template <class V>
+  void operator()(V&& val) const {val._resTable->finish();}
+};
+}
+using SubtreeCache = ad_utility::CacheAdapter<ad_utility::LRUCache<string, CacheValue>, detail::finisher>;
 using PinnedSizes =
     ad_utility::Synchronized<ad_utility::HashMap<std::string, size_t>,
                              std::shared_mutex>;
@@ -43,6 +53,7 @@ class QueryExecutionContext {
   QueryExecutionContext(const Index& index, const Engine& engine,
                         SubtreeCache* const cache,
                         PinnedSizes* const pinnedSizes,
+                        ad_utility::LimitedAllocator<Id> alloc,
                         const bool pinSubtrees = false,
                         const bool pinResult = false)
       : _pinSubtrees(pinSubtrees),
@@ -51,6 +62,7 @@ class QueryExecutionContext {
         _engine(engine),
         _subtreeCache(cache),
         _pinnedSizes(pinnedSizes),
+        _alloc(std::move(alloc)),
         _costFactors() {}
 
   SubtreeCache& getQueryTreeCache() { return *_subtreeCache; }
@@ -71,6 +83,8 @@ class QueryExecutionContext {
     return _costFactors.getCostFactor(key);
   };
 
+  ad_utility::LimitedAllocator<Id> getAllocator() { return _alloc; }
+
   const bool _pinSubtrees;
   const bool _pinResult;
 
@@ -79,5 +93,7 @@ class QueryExecutionContext {
   const Engine& _engine;
   SubtreeCache* const _subtreeCache;
   PinnedSizes* const _pinnedSizes;
+  // allocators are copied but hold shared state
+  ad_utility::LimitedAllocator<Id> _alloc;
   QueryPlanningCostFactors _costFactors;
 };

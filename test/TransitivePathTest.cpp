@@ -10,8 +10,34 @@
 #include "../src/engine/TransitivePath.h"
 #include "../src/global/Id.h"
 
+ad_utility::LimitedAllocator<Id>& alloc() {
+  static ad_utility::LimitedAllocator<Id> a{
+      ad_utility::makeAllocationState(4000000000)};
+  return a;
+}
+
+void sameUnorderedContent(const IdTable& a, const IdTable& b) {
+  auto aCpy = a;
+  auto bCpy = b;
+  auto sorter = [](const auto& a, const auto& b) {
+    if (a.cols() != b.cols()) {
+      return a.cols() < b.cols();
+    }
+    for (size_t i = 0; i < a.cols(); ++i) {
+      if (a[i] != b[i]) {
+        return a[i] < b[i];
+      }
+    }
+    // equal means "not smaller"
+    return false;
+  };
+  std::sort(aCpy.begin(), aCpy.end(), sorter);
+  std::sort(bCpy.begin(), bCpy.end(), sorter);
+  ASSERT_EQ(aCpy, bCpy);
+}
+
 TEST(TransitivePathTest, computeTransitivePath) {
-  IdTable sub(2);
+  IdTable sub(2, alloc());
   sub.push_back({0, 2});
   sub.push_back({2, 4});
   sub.push_back({4, 7});
@@ -21,9 +47,9 @@ TEST(TransitivePathTest, computeTransitivePath) {
   // Disconnected component.
   sub.push_back({10, 11});
 
-  IdTable result(2);
+  IdTable result(2, alloc());
 
-  IdTable expected(2);
+  IdTable expected(2, alloc());
   expected.push_back({0, 2});
   expected.push_back({0, 4});
   expected.push_back({0, 7});
@@ -46,7 +72,8 @@ TEST(TransitivePathTest, computeTransitivePath) {
   TransitivePath::computeTransitivePath<2>(&result, sub, true, true, 0, 1, 0, 0,
                                            1,
                                            std::numeric_limits<size_t>::max());
-  ASSERT_EQ(expected, result);
+  // ASSERT_EQ(expected, result);
+  sameUnorderedContent(expected, result);
 
   result.clear();
   expected.clear();
@@ -66,7 +93,8 @@ TEST(TransitivePathTest, computeTransitivePath) {
 
   TransitivePath::computeTransitivePath<2>(&result, sub, true, true, 0, 1, 0, 0,
                                            1, 2);
-  ASSERT_EQ(expected, result);
+  sameUnorderedContent(expected, result);
+  // ASSERT_EQ(expected, result);
 
   result.clear();
   expected.clear();
@@ -76,7 +104,8 @@ TEST(TransitivePathTest, computeTransitivePath) {
 
   TransitivePath::computeTransitivePath<2>(&result, sub, false, true, 0, 1, 7,
                                            0, 1, 2);
-  ASSERT_EQ(expected, result);
+  // ASSERT_EQ(expected, result);
+  sameUnorderedContent(expected, result);
 
   result.clear();
   expected.clear();
@@ -85,5 +114,6 @@ TEST(TransitivePathTest, computeTransitivePath) {
 
   TransitivePath::computeTransitivePath<2>(&result, sub, true, false, 0, 1, 0,
                                            2, 1, 2);
-  ASSERT_EQ(expected, result);
+  // ASSERT_EQ(expected, result);
+  sameUnorderedContent(expected, result);
 }

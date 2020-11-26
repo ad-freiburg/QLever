@@ -48,12 +48,23 @@ std::vector<PropertyPathParser::Token> PropertyPathParser::tokenize(
 
   size_t start = 0;
   size_t pos = 0;
+  bool escaped = false;
   while (pos < str.size()) {
     char c = str[pos];
     if (!VALID_CHARS[(uint8_t)c]) {
       std::stringstream s;
       s << "Invalid character " << c << " in property path " << str;
-      throw ParseException(s.str());
+      s << ". Valid chars is: ";
+      for (auto el: VALID_CHARS) {
+        s << el;
+      }
+
+      s << "\nNumerical value of character is " << (unsigned) c;
+      s << "\nvalid chars at this position is (uint_8t and unsigned) " << VALID_CHARS[(uint8_t)c] << VALID_CHARS[(unsigned)c] << '\n';
+
+      if (!VALID_CHARS[(uint8_t)c]) {
+        throw ParseException(s.str());
+      }
     }
     if (c == '<') {
       inside_iri = true;
@@ -61,31 +72,38 @@ std::vector<PropertyPathParser::Token> PropertyPathParser::tokenize(
       inside_iri = false;
     }
 
-    if (!inside_iri && DELIMITER_CHARS[(uint8_t)str[pos]] &&
-        (pos != 0 || c != '?')) {
-      if (start != pos) {
-        // add the string up to but not including the new token
-        tokens.push_back({str.substr(start, pos - start), start});
+    if (!inside_iri && c == '\\') {
+      escaped = !escaped;
+    } else if (!inside_iri && DELIMITER_CHARS[(uint8_t)str[pos]] && escaped) {
+      escaped = false;
+    } else {
+      escaped = false;
+      if (!inside_iri && DELIMITER_CHARS[(uint8_t)str[pos]] &&
+          (pos != 0 || c != '?')) {
+        if (start != pos) {
+          // add the string up to but not including the new token
+          tokens.push_back({str.substr(start, pos - start), start});
 
-        start = pos;
-      }
-      while (pos < str.size() && DELIMITER_CHARS[(uint8_t)str[pos]]) {
-        pos++;
-        if (c == '*' && pos < str.size() && std::isdigit(str[pos])) {
-          // The * token has a number following it
-          pos++;
-          while (pos < str.size() && std::isdigit(str[pos])) {
-            pos++;
-          }
-          tokens.push_back({str.substr(start, pos - start), start});
-          start = pos;
-        } else {
-          // Add the token
-          tokens.push_back({str.substr(start, pos - start), start});
           start = pos;
         }
+        while (pos < str.size() && DELIMITER_CHARS[(uint8_t)str[pos]]) {
+          pos++;
+          if (c == '*' && pos < str.size() && std::isdigit(str[pos])) {
+            // The * token has a number following it
+            pos++;
+            while (pos < str.size() && std::isdigit(str[pos])) {
+              pos++;
+            }
+            tokens.push_back({str.substr(start, pos - start), start});
+            start = pos;
+          } else {
+            // Add the token
+            tokens.push_back({str.substr(start, pos - start), start});
+            start = pos;
+          }
+        }
+        continue;
       }
-      continue;
     }
     pos++;
   }

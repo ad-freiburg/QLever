@@ -83,6 +83,17 @@ std::string TransitivePath::getDescriptor() const {
     os << " rightValue " << _rightValue;
   }
   os << " minDist " << _minDist << " maxDist " << _maxDist << "\n";
+
+  os << "sorted on: ";
+  for (const auto& el : resultSortedOn()) {
+    os << el;
+  }
+  os << '\n';
+  os << "variable columns ";
+  for (const auto& [k, v]: _variableColumns) {
+    os << k << " : " << v << '\n';
+  }
+  os << '\n';
   return os.str();
 }
 
@@ -149,6 +160,17 @@ size_t TransitivePath::getSizeEstimate() {
   }
   if (_rightSideTree != nullptr) {
     return _rightSideTree->getSizeEstimate();
+  }
+  // TODO HACK(Hannah, 05.09.2020): Set costs to something very large, so that we
+  // never compute the complete transitive hull. Note that
+  // _subtree->getSizeEstimate() is the size (number of tuples) of the
+  // predicate, of which we are about to compute the transitive hull.
+  //
+  // NOTE: On Wikidata, the predicate with the largest blowup when taking the
+  // transitive hull (adding + to the predicate name) is wdt:P2789 (connects
+  // with). The blowup is from 90K (without +) to 110M (with +).
+  if (_leftIsVar && _rightIsVar) {
+    return _subtree->getSizeEstimate() * 10000;
   }
   // TODO(Florian): this is not necessarily a good estimator
   if (_leftIsVar) {
@@ -227,6 +249,9 @@ void TransitivePath::computeTransitivePath(IdTable* dynRes,
       nodes.push_back(leftValue);
     }
     for (size_t i = 0; i < sub.size(); i++) {
+      if (i % 2048 == 0) {
+        checkTimeout();
+      }
       size_t l = sub(i, leftSubCol);
       size_t r = sub(i, rightSubCol);
       MapIt it = edges.find(l);
@@ -247,6 +272,9 @@ void TransitivePath::computeTransitivePath(IdTable* dynRes,
     (void)leftValue;
     nodes.push_back(rightValue);
     for (size_t i = 0; i < sub.size(); i++) {
+      if (i % 2048 == 0) {
+        checkTimeout();
+      }
       // Use the inverted edges
       size_t l = sub(i, leftSubCol);
       size_t r = sub(i, rightSubCol);
@@ -351,6 +379,9 @@ void TransitivePath::computeTransitivePathLeftBound(
 
   // initialize the map from the subresult
   for (size_t i = 0; i < sub.size(); i++) {
+    if (i % 4096 == 0) {
+      checkTimeout();
+    }
     size_t l = sub(i, leftSubCol);
     size_t r = sub(i, rightSubCol);
     MapIt it = edges.find(l);
@@ -381,6 +412,9 @@ void TransitivePath::computeTransitivePathLeftBound(
   size_t last_result_begin = 0;
   size_t last_result_end = 0;
   for (size_t i = 0; i < left.size(); i++) {
+    if (i % 4096 == 0) {
+      checkTimeout();
+    }
     if (left[i][leftSideCol] == last_elem) {
       // We can repeat the last output
       size_t num_new = last_result_end - last_result_begin;
@@ -482,6 +516,9 @@ void TransitivePath::computeTransitivePathRightBound(
 
   // initialize the map from the subresult
   for (size_t i = 0; i < sub.size(); i++) {
+    if (i % 4096 == 0) {
+      checkTimeout();
+    }
     size_t l = sub(i, leftSubCol);
     size_t r = sub(i, rightSubCol);
     MapIt it = edges.find(r);
@@ -512,6 +549,9 @@ void TransitivePath::computeTransitivePathRightBound(
   size_t last_result_begin = 0;
   size_t last_result_end = 0;
   for (size_t i = 0; i < right.size(); i++) {
+    if (i % 4096 == 0) {
+      checkTimeout();
+    }
     if (right[i][rightSideCol] == last_elem) {
       // We can repeat the last output
       size_t num_new = last_result_end - last_result_begin;

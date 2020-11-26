@@ -160,7 +160,7 @@ VocabularyData Index::passFileForVocabulary(const string& filename,
     std::array<ItemMapManager, NUM_PARALLEL_ITEM_MAPS> itemArray;
 
     {
-      auto p = ad_pipeline::setupParallelPipeline<1, NUM_PARALLEL_ITEM_MAPS>(
+      auto p = ad_pipeline::setupParallelPipeline<1, 1, NUM_PARALLEL_ITEM_MAPS>(
           _parserBatchSize,
           // when called, returns an optional to the next triple. If
           // <linexPerPartial> triples were parsed, return std::nullopt. when
@@ -169,6 +169,15 @@ VocabularyData Index::passFileForVocabulary(const string& filename,
           // as a first step in the parallel Pipeline.
           ParserBatcher(parser, linesPerPartial,
                         [&]() { parserExhausted = true; }),
+          // do all the unescaping from Sparql (ToDo<joka921>:: move this into
+          // its own pipeline within the parser
+          [this](Triple&& t) {
+            Triple res;
+            std::transform(t.begin(), t.end(), res.begin(), [](const auto& s) {
+              return TurtleToken::normalizeRDFLiteral(s);
+            });
+            return res;
+          },
           // convert each triple to the internal representation (e.g. special
           // values for Numbers, externalized literals, etc.)
           [this](Triple&& t) {
@@ -564,7 +573,7 @@ void Index::createPatternsImpl(const string& fileName,
                                const Id langPredUpperBound,
                                const Args&... vecReaderArgs) {
   IndexMetaDataHmap meta;
-  typedef std::unordered_map<Pattern, size_t> PatternsCountMap;
+  using PatternsCountMap = ad_utility::HashMap<Pattern, size_t>;
 
   LOG(INFO) << "Creating patterns file..." << std::endl;
   VecReaderType reader(vecReaderArgs...);
@@ -577,7 +586,6 @@ void Index::createPatternsImpl(const string& fileName,
   // determine the most common patterns
   Pattern pattern;
 
-  size_t patternIndex = 0;
   size_t numValidPatterns = 0;
   Id currentSubj = (*reader)[0];
 
@@ -586,32 +594,19 @@ void Index::createPatternsImpl(const string& fileName,
     if (triple[0] != currentSubj) {
       currentSubj = triple[0];
       numValidPatterns++;
-      auto it = patternCounts.find(pattern);
-      if (it == patternCounts.end()) {
-        patternCounts.insert(std::pair<Pattern, size_t>(pattern, size_t(1)));
-      } else {
-        (*it).second++;
-      }
+      patternCounts[pattern]++;
       pattern.clear();
-      patternIndex = 0;
     }
-
     // don't list predicates twice
-    if (patternIndex == 0 || pattern[patternIndex - 1] != triple[1]) {
+    if (pattern.empty() || pattern.back() != triple[1]) {
       // Ignore @..@ type language predicates
       if (triple[1] < langPredLowerBound || triple[1] >= langPredUpperBound) {
         pattern.push_back(triple[1]);
-        patternIndex++;
       }
     }
   }
   // process the last entry
-  auto it = patternCounts.find(pattern);
-  if (it == patternCounts.end()) {
-    patternCounts.insert(std::pair<Pattern, size_t>(pattern, size_t(1)));
-  } else {
-    (*it).second++;
-  }
+  patternCounts[pattern]++;
   LOG(INFO) << "Counted patterns and found " << patternCounts.size()
             << " distinct patterns." << std::endl;
   LOG(INFO) << "Patterns were found for " << numValidPatterns << " entities."
@@ -706,7 +701,7 @@ void Index::createPatternsImpl(const string& fileName,
 
   pattern.clear();
   currentSubj = (*VecReaderType(vecReaderArgs...))[0];
-  patternIndex = 0;
+  size_t patternIndex = 0;
   // Create the has-relation and has-pattern predicates
   for (VecReaderType reader2(vecReaderArgs...); !reader2.empty(); ++reader2) {
     auto triple = *reader2;

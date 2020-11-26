@@ -1,6 +1,6 @@
 add_executable(SparqlParserTest SparqlParserTest.cpp)
 add_test(SparqlParserTest SparqlParserTest)
-target_link_libraries(SparqlParserTest gtest_main parser ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(SparqlParserTest gtest_main parser ${CMAKE_THREAD_LIBS_INIT} ${ICU_LIBRARIES})
 
 add_executable(StringUtilsTest StringUtilsTest.cpp)
 add_test(StringUtilsTest StringUtilsTest)
@@ -9,6 +9,11 @@ target_link_libraries(StringUtilsTest gtest_main ${CMAKE_THREAD_LIBS_INIT})
 add_executable(LRUCacheTest CacheTest.cpp)
 add_test(LRUCacheTest LRUCacheTest)
 target_link_libraries(LRUCacheTest gtest_main ${CMAKE_THREAD_LIBS_INIT} absl::flat_hash_map)
+
+add_executable(CacheAdapterTest CacheAdapterTest.cpp)
+add_test(CacheAdapterTest CacheAdapterTest)
+target_link_libraries(CacheAdapterTest gtest_main ${CMAKE_THREAD_LIBS_INIT} absl::flat_hash_map)
+
 
 add_executable(FileTest FileTest.cpp)
 add_test(FileTest FileTest)
@@ -68,7 +73,7 @@ target_link_libraries(HashMapTest gtest_main ${CMAKE_THREAD_LIBS_INIT} absl::fla
 
 add_executable(HashSetTest HashSetTest.cpp)
 add_test(HashSetTest HashSetTest)
-target_link_libraries(HashSetTest gtest_main ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(HashSetTest gtest_main ${CMAKE_THREAD_LIBS_INIT} absl::flat_hash_set)
 
 add_executable(GroupByTest GroupByTest.cpp)
 add_test(GroupByTest GroupByTest)
@@ -96,7 +101,7 @@ target_link_libraries(UnionTest gtest_main engine ${CMAKE_THREAD_LIBS_INIT})
 
 add_executable(TokenTest TokenTest.cpp)
 add_test(TokenTest TokenTest)
-target_link_libraries(TokenTest parser re2 gtest_main -pthread)
+target_link_libraries(TokenTest parser re2 gtest_main -pthread ${ICU_LIBRARIES})
 
 add_executable(TurtleParserTest TurtleParserTest.cpp)
 add_test(TurtleParserTest TurtleParserTest)
@@ -116,11 +121,14 @@ target_link_libraries(TransitivePathTest engine gtest_main ${CMAKE_THREAD_LIBS_I
 
 add_executable(SparqlLexerTest SparqlLexerTest.cpp)
 add_test(SparqlLexerTest SparqlLexerTest)
-target_link_libraries(SparqlLexerTest parser gtest_main ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(SparqlLexerTest parser gtest_main ${CMAKE_THREAD_LIBS_INIT} ${ICU_LIBRARIES})
 
-add_executable(Utf8RegexTest Utf8RegexTest.cpp)
-add_test(Utf8RegexTest Utf8RegexTest)
-target_link_libraries(Utf8RegexTest gtest_main ${CMAKE_THREAD_LIBS_INIT})
+set(TEST_COMPILE_TIME_REGEXES OFF CACHE BOOL "Include the tests for the Utf8Regex.")
+if (TEST_COMPILE_TIME_REGEXES)
+  add_executable(Utf8RegexTest Utf8RegexTest.cpp)
+  add_test(Utf8RegexTest Utf8RegexTest)
+  target_link_libraries(Utf8RegexTest gtest_main ${CMAKE_THREAD_LIBS_INIT})
+endif (TEST_COMPILE_TIME_REGEXES)
 
 add_executable(BatchedPipelineTest BatchedPipelineTest.cpp)
 add_test(BatchedPipelineTest BatchedPipelineTest)
@@ -141,3 +149,14 @@ target_link_libraries(PriorityQueueTest gtest_main absl::flat_hash_map ${CMAKE_T
 add_executable(SynchronizedTest SynchronizedTest.cpp)
 add_test(SynchronizedTest SynchronizedTest)
 target_link_libraries(SynchronizedTest gtest_main ${CMAKE_THREAD_LIBS_INIT})
+
+add_executable(BindTest BindTest.cpp)
+add_test(BindTest BindTest)
+target_link_libraries(BindTest gtest_main engine ${CMAKE_THREAD_LIBS_INIT})
+add_executable(LimitedAllocatorTest LimitedAllocatorTest.cpp)
+add_test(LimitedAllocatorTest LimitedAllocatorTest)
+target_link_libraries(LimitedAllocatorTest gtest_main ${CMAKE_THREAD_LIBS_INIT})
+
+add_executable(MinusTest MinusTest.cpp)
+add_test(MinusTest MinusTest)
+target_link_libraries(MinusTest gtest_main engine ${CMAKE_THREAD_LIBS_INIT})
