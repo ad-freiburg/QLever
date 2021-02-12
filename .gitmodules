@@ -10,3 +10,6 @@
 [submodule "third_party/abseil-cpp"]
 	path = third_party/abseil-cpp
 	url = https://github.com/abseil/abseil-cpp.git
+[submodule "third_party/uWebSockets/src"]
+	path = third_party/uWebSockets/src
+	url = https://github.com/uNetworking/uWebSockets.git
