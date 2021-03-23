@@ -20,32 +20,34 @@ using std::vector;
 // and a column index referring to such a column. It then creates a ResultTable
 // containing two columns, the first one filled with the ids of all predicates
 // for which there is an entry in the index with one of the entities in the
-// specified input column as its subject. The second output column contains a
-// count of how many of the input entities fulfill that requirement for that
-// predicate. This operation requires the use of the usePatterns option both
-// when building as well as when loading the index.
-class CountAvailablePredicates : public Operation {
+// specified input column as its subject (or object). The second output column
+// contains a count of how many of the input entities fulfill that requirement
+// for that predicate. This operation requires the use of the usePatterns
+// option both when building as well as when loading the index.
+class PredicateCountEntities : public Operation {
  public:
-  /**
-   * @brief Creates a new CountAvailablePredicates operation that returns
-   * predicates and their counts for all entities.
-   */
-  CountAvailablePredicates(QueryExecutionContext* qec);
+  enum class CountType { SUBJECT, OBJECT };
 
   /**
-   * @brief Creates a new CountAvailablePredicates operation that returns
+   * @brief Creates a new PredicateCountEntities operation that returns
+   * predicates and their counts for all entities.
+   */
+  PredicateCountEntities(QueryExecutionContext* qec);
+
+  /**
+   * @brief Creates a new PredicateCountEntities operation that returns
    * predicates and their counts for the entities in column subjectColumnIndex
    * of the result of subtree.
    */
-  CountAvailablePredicates(QueryExecutionContext* qec,
-                           std::shared_ptr<QueryExecutionTree> subtree,
-                           size_t subjectColumnIndex);
+  PredicateCountEntities(QueryExecutionContext* qec,
+                         std::shared_ptr<QueryExecutionTree> subtree,
+                         size_t subjectColumnIndex);
 
   /**
    * @brief Creates a new CountAvailblePredicates operation that returns
    * predicates and their counts for the entity given by the entityName.
    */
-  CountAvailablePredicates(QueryExecutionContext* qec, std::string entityName);
+  PredicateCountEntities(QueryExecutionContext* qec, std::string entityName);
 
   virtual string asString(size_t indent = 0) const override;
 
@@ -84,6 +86,12 @@ class CountAvailablePredicates : public Operation {
   void setVarNames(const std::string& predicateVarName,
                    const std::string& countVarName);
 
+  /**
+   * @brief This operation can count predicates connected to subjects or
+   * objects. This method switches between the two modes.
+   */
+  void setCountFor(CountType count_for);
+
   // This method is declared here solely for unit testing purposes
   /**
    * @brief Computes all relations that have one of input[inputCol]'s entities
@@ -97,18 +105,21 @@ class CountAvailablePredicates : public Operation {
    * @param subjectColumn The column containing the entities for which the
    *                      relations should be counted.
    */
-  template <int I>
+  template <int I, typename PredicateId>
   static void computePatternTrick(
       const IdTable& input, IdTable* result,
       const vector<PatternID>& hasPattern,
-      const CompactStringVector<Id, Id>& hasPredicate,
-      const CompactStringVector<size_t, Id>& patterns,
-      const size_t subjectColumn, RuntimeInformation* runtimeInfo);
+      const CompactStringVector<Id, PredicateId>& hasPredicate,
+      const CompactStringVector<size_t, PredicateId>& patterns,
+      const std::vector<Id>& predicateGlobalIds, const size_t subjectColumn,
+      RuntimeInformation* runtimeInfo);
 
+  template <typename PredicateId>
   static void computePatternTrickAllEntities(
       IdTable* result, const vector<PatternID>& hasPattern,
-      const CompactStringVector<Id, Id>& hasPredicate,
-      const CompactStringVector<size_t, Id>& patterns);
+      const CompactStringVector<Id, PredicateId>& hasPredicate,
+      const CompactStringVector<size_t, PredicateId>& patterns,
+      const std::vector<Id>& predicateGlobalIds);
 
  private:
   std::shared_ptr<QueryExecutionTree> _subtree;
@@ -118,5 +129,12 @@ class CountAvailablePredicates : public Operation {
   std::string _predicateVarName;
   std::string _countVarName;
 
+  CountType _count_for;
+
   virtual void computeResult(ResultTable* result) override;
+
+  template <typename PredicateId>
+  void computeResult(
+      ResultTable* result,
+      std::shared_ptr<const PatternContainerImpl<PredicateId>> pattern_data);
 };

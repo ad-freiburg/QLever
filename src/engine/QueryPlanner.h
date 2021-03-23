@@ -278,6 +278,10 @@ class QueryPlanner {
       const ParsedQuery& pq, const vector<vector<SubtreePlan>>& dpTab,
       const SparqlTriple& patternTrickTriple);
 
+  vector<SubtreePlan> getEntityCountPredicatesRow(
+      const ParsedQuery& pq, const vector<vector<SubtreePlan>>& dpTab,
+      const SparqlTriple& entityCountPredicatesTriple);
+
   vector<SubtreePlan> getHavingRow(
       const ParsedQuery& pq, const vector<vector<SubtreePlan>>& dpTab) const;
 
@@ -367,7 +371,7 @@ class QueryPlanner {
 
   /**
    * @brief Determines if the pattern trick (and in turn the
-   * CountAvailablePredicates operation) are applicable to the given
+   * PredicateCountEntities operation) are applicable to the given
    * parsed query. If a ql:has-predicate triple is found and
    * CountAvailblePredicates can be used for it, the triple will be removed from
    * the parsed query.
@@ -378,6 +382,9 @@ class QueryPlanner {
    */
   bool checkUsePatternTrick(ParsedQuery* pq,
                             SparqlTriple* patternTrickTriple) const;
+
+  bool checkUseEntityCountPredicates(ParsedQuery* pq,
+                                     SparqlTriple* patternTrickTriple) const;
 
   /**
    * @brief return the index of the cheapest execution tree in the argument.
