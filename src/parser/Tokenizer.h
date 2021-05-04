@@ -16,9 +16,6 @@
 using re2::RE2;
 using namespace std::string_literals;
 
-
-
-
 /** holds all the google re2 regexes that correspond to all terminals in the
  * turtle grammar cannot be static since google regexes have to be constructed
  * at runtime
