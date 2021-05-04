@@ -52,5 +52,5 @@ bool TokenTestCtreHelper::matchIriref(std::string_view s) {
 
 // _________________________________________________________________________
 bool TokenTestCtreHelper::matchPnCharsBaseString(std::string_view s) {
-  return ctre::match<T::PnCharsBaseString>(s);
+  return ctre::match<cls(T::PnCharsBaseString)>(s);
 }
