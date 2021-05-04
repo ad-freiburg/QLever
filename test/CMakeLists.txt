@@ -129,7 +129,7 @@ target_link_libraries(Utf8RegexTest gtest_main ${CMAKE_THREAD_LIBS_INIT})
 
 add_executable(BatchedPipelineTest BatchedPipelineTest.cpp)
 add_test(BatchedPipelineTest BatchedPipelineTest)
-target_link_libraries(BatchedPipelineTest gtest_main parser ${CMAKE_THREAD_LIBS_INIT})
+target_link_libraries(BatchedPipelineTest gtest_main ${CMAKE_THREAD_LIBS_INIT})
 
 add_executable(TupleHelpersTest TupleHelpersTest.cpp)
 add_test(TupleHelpersTest TupleHelpersTest)
