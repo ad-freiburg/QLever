@@ -50,8 +50,7 @@ class Sort : public Operation {
 
   [[nodiscard]] size_t getResultWidth() const override;
 
-  [[nodiscard]] ad_utility::HashMap<string, size_t> getVariableColumns()
-      const override {
+  [[nodiscard]] VariableColumnMap getVariableColumns() const override {
     return _subtree->getVariableColumns();
   }
 

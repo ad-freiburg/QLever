@@ -21,8 +21,9 @@ class Filter : public Operation {
  public:
   Filter(QueryExecutionContext* qec,
          std::shared_ptr<QueryExecutionTree> subtree,
-         SparqlFilter::FilterType type, string lhs, string rhs,
-         vector<string> additionalLhs, vector<string> additionalPrefixes);
+         SparqlFilter::FilterType type, SparqlVariable lhs, string rhs,
+         vector<SparqlVariable> additionalLhs,
+         vector<string> additionalPrefixes);
 
   virtual string asString(size_t indent = 0) const override;
 
@@ -104,25 +105,24 @@ class Filter : public Operation {
     return _subtree->getMultiplicity(col);
   }
 
-  virtual ad_utility::HashMap<string, size_t> getVariableColumns()
-      const override {
+  virtual VariableColumnMap getVariableColumns() const override {
     return _subtree->getVariableColumns();
   }
 
  private:
   std::shared_ptr<QueryExecutionTree> _subtree;
   SparqlFilter::FilterType _type;
-  string _lhs;
+  SparqlVariable _lhs;
   string _rhs;
 
-  std::vector<string> _additionalLhs;
+  std::vector<SparqlVariable> _additionalLhs;
   std::vector<string> _additionalPrefixRegexes;
   bool _regexIgnoreCase;
   bool _lhsAsString;
 
   [[nodiscard]] bool isLhsSorted() const {
     const auto& subresSortedOn = _subtree->resultSortedOn();
-    size_t lhsInd = _subtree->getVariableColumn(_lhs);
+    size_t lhsInd = _subtree->getVariableColumn(SparqlVariable{_lhs});
     return !subresSortedOn.empty() && subresSortedOn[0] == lhsInd;
   }
   /**

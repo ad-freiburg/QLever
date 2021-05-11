@@ -56,8 +56,7 @@ class OrderBy : public Operation {
 
   virtual size_t getResultWidth() const override;
 
-  virtual ad_utility::HashMap<string, size_t> getVariableColumns()
-      const override {
+  virtual VariableColumnMap getVariableColumns() const override {
     return _subtree->getVariableColumns();
   }
 

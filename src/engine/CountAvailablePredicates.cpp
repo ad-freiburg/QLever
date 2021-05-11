@@ -11,8 +11,8 @@ CountAvailablePredicates::CountAvailablePredicates(QueryExecutionContext* qec)
       _subtree(nullptr),
       _subjectColumnIndex(0),
       _subjectEntityName(),
-      _predicateVarName("predicate"),
-      _countVarName("count") {}
+      _predicateVarName("?:qlever-patterntrick-default-predicate"),
+      _countVarName("?:qlever-patterntrick-default-count") {}
 
 // _____________________________________________________________________________
 CountAvailablePredicates::CountAvailablePredicates(
@@ -22,8 +22,8 @@ CountAvailablePredicates::CountAvailablePredicates(
       _subtree(subtree),
       _subjectColumnIndex(subjectColumnIndex),
       _subjectEntityName(),
-      _predicateVarName("predicate"),
-      _countVarName("count") {}
+      _predicateVarName("?:qlever-patterntrick-default-predicate"),
+      _countVarName("?:qlever-patterntrick-default-count") {}
 
 CountAvailablePredicates::CountAvailablePredicates(QueryExecutionContext* qec,
                                                    std::string entityName)
@@ -31,8 +31,8 @@ CountAvailablePredicates::CountAvailablePredicates(QueryExecutionContext* qec,
       _subtree(nullptr),
       _subjectColumnIndex(0),
       _subjectEntityName(entityName),
-      _predicateVarName("predicate"),
-      _countVarName("count") {}
+      _predicateVarName("?:qlever-patterntrick-default-predicate"),
+      _countVarName("?:qlever-patterntrick-default-count") {}
 
 // _____________________________________________________________________________
 string CountAvailablePredicates::asString(size_t indent) const {
@@ -71,16 +71,17 @@ vector<size_t> CountAvailablePredicates::resultSortedOn() const {
 }
 
 // _____________________________________________________________________________
-void CountAvailablePredicates::setVarNames(const std::string& predicateVarName,
-                                           const std::string& countVarName) {
+void CountAvailablePredicates::setVarNames(
+    const SparqlVariable& predicateVarName,
+    const SparqlVariable& countVarName) {
   _predicateVarName = predicateVarName;
   _countVarName = countVarName;
 }
 
 // _____________________________________________________________________________
-ad_utility::HashMap<string, size_t>
-CountAvailablePredicates::getVariableColumns() const {
-  ad_utility::HashMap<string, size_t> varCols;
+Operation::VariableColumnMap CountAvailablePredicates::getVariableColumns()
+    const {
+  VariableColumnMap varCols;
   varCols[_predicateVarName] = 0;
   varCols[_countVarName] = 1;
   return varCols;

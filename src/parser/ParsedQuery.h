@@ -18,6 +18,45 @@
 using std::string;
 using std::vector;
 
+/// For the name of a (text) variable ?t, get a unique name for the
+/// corresponding text score variable (?:qlever-text-score-?t).
+inline string getTextScoreVariableName(const string& variableName) {
+  return "?:qlever-text-score-" + variableName;
+}
+/// A strong type for a variable. Currently we also support score variables like
+/// SCORE(?y) b.c. they are treated like variables from the text... machinery
+class SparqlVariable {
+ public:
+  [[nodiscard]] const string asString() const { return _variable; }
+  //[[nodiscard]] const string& variableName() const { return _variable; }
+  explicit SparqlVariable(string variable) : _variable{std::move(variable)} {
+    AD_CHECK(_variable.starts_with('?'));
+  }
+
+  bool operator==(const SparqlVariable&) const = default;
+
+  // TODO<joka921> : The TextOperationWithFilter uses a std::set of variables,
+  // find out, if the ordering is indeed needed.
+  bool operator<(const SparqlVariable& rhs) const {
+    return asString() < rhs.asString();
+  };
+
+  // TODO<joka921> This operator also gets obsolete with more strong types
+  bool operator==(const string& rhs) const { return asString() == rhs; }
+
+ private:
+  string _variable;
+};
+
+namespace std {
+template <>
+struct hash<SparqlVariable> {
+  auto operator()(const SparqlVariable& v) const {
+    return std::hash<string>{}(v.asString());
+  }
+};
+}  // namespace std
+
 // Data container for prefixes
 class SparqlPrefix {
  public:
@@ -165,7 +204,7 @@ class OrderKey {
              !::isspace(static_cast<unsigned char>(textual[end]))) {
         end++;
       }
-      _key = "SCORE(" + textual.substr(pos, end - pos) + ")";
+      _key = getTextScoreVariableName(textual.substr(pos, end - pos));
     } else if (lower[pos] == '?') {
       // key is simple variable
       size_t end = pos + 1;
@@ -198,9 +237,9 @@ class SparqlFilter {
   string asString() const;
 
   FilterType _type;
-  string _lhs;
+  SparqlVariable _lhs{"?:qlever-default-sparql-filter-lhs"};
   string _rhs;
-  vector<string> _additionalLhs;
+  vector<SparqlVariable> _additionalLhs;
   vector<string> _additionalPrefixes;
   bool _regexIgnoreCase = false;
   // True if the str function was applied to the left side.
@@ -211,7 +250,7 @@ class SparqlFilter {
 class SparqlValues {
  public:
   // The variables to which the values will be bound
-  vector<string> _variables;
+  vector<SparqlVariable> _variables;
   // A table storing the values in their string form
   vector<vector<string>> _values;
 };
@@ -298,24 +337,25 @@ class ParsedQuery {
 
   struct Alias {
     AggregateType _type;
-    string _inVarName;
-    string _outVarName;
+    SparqlVariable _inVarName{"?:qlever-default-alias-uninitialized-inVarName"};
+    SparqlVariable _outVarName{
+        "?:qlever-default-alias-uninitialized-outVarName"};
     bool _isAggregate = true;
     bool _isDistinct = false;
     std::string _function;
-    // The deilimiter used by group concat
+    // The delimiter used by group concat
     std::string _delimiter = " ";
   };
 
   ParsedQuery() = default;
 
   vector<SparqlPrefix> _prefixes;
-  vector<string> _selectedVariables;
+  vector<SparqlVariable> _selectedVariables;
   GraphPattern _rootGraphPattern;
   vector<SparqlFilter> _havingClauses;
   size_t _numGraphPatterns = 1;
   vector<OrderKey> _orderBy;
-  vector<string> _groupByVariables;
+  vector<SparqlVariable> _groupByVariables;
   string _limit;
   string _textLimit;
   string _offset;
@@ -418,32 +458,40 @@ struct GraphPatternOperation {
       // Some other functions need this interface, for example,
       // ParsedQuery::expandPrefix .
       vector<string*> strings() { return {&_kbValue}; }
+      vector<const SparqlVariable*> variables() { return {}; }
       [[nodiscard]] string getDescriptor() const { return _kbValue; }
     };
     struct Sum {
       static constexpr const char* Name = "Sum";
-      string _var1, _var2;
-      vector<string*> strings() { return {&_var1, &_var2}; }
+      SparqlVariable _var1, _var2;
+      vector<string*> strings() { return {}; }
+      vector<const SparqlVariable*> variables() { return {&_var1, &_var2}; }
       [[nodiscard]] string getDescriptor() const {
-        return _var1 + " + " + _var2;
+        return _var1.asString() + " + " + _var2.asString();
       }
     };
 
     struct Rename {
       static constexpr const char* Name = "Rename";
-      string _var;
-      vector<string*> strings() { return {&_var}; }
-      [[nodiscard]] string getDescriptor() const { return _var; }
+      SparqlVariable _var;
+      vector<string*> strings() { return {}; }
+      vector<const SparqlVariable*> variables() { return {&_var}; }
+      [[nodiscard]] string getDescriptor() const { return _var.asString(); }
     };
-    std::variant<Rename, Constant, Sum> _expressionVariant;
-    std::string _target;  // the variable to which the expression will be bound
+
+    using ExpressionVariant = std::variant<Rename, Constant, Sum>;
+    ExpressionVariant _expressionVariant;
+    SparqlVariable
+        _target;  // the variable to which the expression will be bound
 
     // Return all the strings contained in the BIND expression (variables,
     // constants, etc. Is required e.g. by ParsedQuery::expandPrefix.
     vector<string*> strings() {
       auto r = std::visit([](auto&& arg) { return arg.strings(); },
                           _expressionVariant);
-      r.push_back(&_target);
+      // TODO<joka921>: who else uses this interface,
+      // do we need the variables for something else
+      // r.push_back(&_target);
       return r;
     }
 
@@ -451,6 +499,21 @@ struct GraphPatternOperation {
     // always const, so this is fine.
     [[nodiscard]] vector<const string*> strings() const {
       auto r = const_cast<Bind*>(this)->strings();
+      return {r.begin(), r.end()};
+    }
+
+    // All the variables contained in the expression
+    vector<const SparqlVariable*> variables() {
+      auto r = std::visit([](auto&& arg) { return arg.variables(); },
+                          _expressionVariant);
+      r.push_back(&_target);
+      return r;
+    }
+
+    // Const overload, needed by the query planner. The actual behavior is
+    // always const, so this is fine.
+    [[nodiscard]] vector<const SparqlVariable*> variables() const {
+      auto r = const_cast<Bind*>(this)->variables();
       return {r.begin(), r.end()};
     }
 
@@ -463,7 +526,7 @@ struct GraphPatternOperation {
     [[nodiscard]] string getDescriptor() const {
       auto inner = std::visit([](auto&& arg) { return arg.getDescriptor(); },
                               _expressionVariant);
-      return "BIND (" + inner + " AS " + _target + ")";
+      return "BIND (" + inner + " AS " + _target.asString() + ")";
     }
   };
 

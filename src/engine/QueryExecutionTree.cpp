@@ -64,39 +64,36 @@ void QueryExecutionTree::setOperation(QueryExecutionTree::OperationType type,
 }
 
 // _____________________________________________________________________________
-void QueryExecutionTree::setVariableColumn(const string& variable,
+void QueryExecutionTree::setVariableColumn(const SparqlVariable& variable,
                                            size_t column) {
   _variableColumnMap[variable] = column;
 }
 
 // _____________________________________________________________________________
-size_t QueryExecutionTree::getVariableColumn(const string& variable) const {
+size_t QueryExecutionTree::getVariableColumn(
+    const SparqlVariable& variable) const {
   if (_variableColumnMap.count(variable) == 0) {
     AD_THROW(ad_semsearch::Exception::CHECK_FAILED,
-             "Variable could not be mapped to result column. Var: " + variable);
+             "Variable could not be mapped to result column. Var: " +
+                 variable.asString());
   }
   return _variableColumnMap.find(variable)->second;
 }
 
 // _____________________________________________________________________________
-void QueryExecutionTree::setVariableColumns(
-    ad_utility::HashMap<string, size_t> const& map) {
+void QueryExecutionTree::setVariableColumns(const VariableColumnMap& map) {
   _variableColumnMap = map;
 }
 
 // _____________________________________________________________________________
-void QueryExecutionTree::writeResultToStream(std::ostream& out,
-                                             const vector<string>& selectVars,
-                                             size_t limit, size_t offset,
-                                             char sep) const {
+void QueryExecutionTree::writeResultToStream(
+    std::ostream& out, const vector<SparqlVariable>& selectVars, size_t limit,
+    size_t offset, char sep) const {
   // They may trigger computation (but does not have to).
   shared_ptr<const ResultTable> res = getResult();
   LOG(DEBUG) << "Resolving strings for finished binary result...\n";
   vector<std::optional<pair<size_t, ResultTable::ResultType>>> validIndices;
-  for (auto var : selectVars) {
-    if (ad_utility::startsWith(var, "TEXT(")) {
-      var = var.substr(5, var.rfind(')') - 5);
-    }
+  for (const auto& var : selectVars) {
     auto it = getVariableColumns().find(var);
     if (it != getVariableColumns().end()) {
       validIndices.push_back(pair<size_t, ResultTable::ResultType>(
@@ -118,15 +115,13 @@ void QueryExecutionTree::writeResultToStream(std::ostream& out,
 
 // _____________________________________________________________________________
 nlohmann::json QueryExecutionTree::writeResultAsJson(
-    const vector<string>& selectVars, size_t limit, size_t offset) const {
+    const vector<SparqlVariable>& selectVars, size_t limit,
+    size_t offset) const {
   // They may trigger computation (but does not have to).
   shared_ptr<const ResultTable> res = getResult();
   LOG(DEBUG) << "Resolving strings for finished binary result...\n";
   vector<std::optional<pair<size_t, ResultTable::ResultType>>> validIndices;
-  for (auto var : selectVars) {
-    if (ad_utility::startsWith(var, "TEXT(")) {
-      var = var.substr(5, var.rfind(')') - 5);
-    }
+  for (const auto& var : selectVars) {
     auto vc = getVariableColumns().find(var);
     if (vc != getVariableColumns().end()) {
       validIndices.push_back(pair<size_t, ResultTable::ResultType>(
@@ -180,8 +175,8 @@ bool QueryExecutionTree::knownEmptyResult() {
 }
 
 // _____________________________________________________________________________
-bool QueryExecutionTree::varCovered(string var) const {
-  return _variableColumnMap.count(var) > 0;
+bool QueryExecutionTree::varCovered(const SparqlVariable& var) const {
+  return _variableColumnMap.contains(var);
 }
 
 // _______________________________________________________________________

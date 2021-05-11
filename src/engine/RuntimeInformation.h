@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "../parser/ParsedQuery.h"
 #include "../util/HashMap.h"
 #include "../util/StringUtils.h"
 #include "../util/Timer.h"
@@ -90,10 +91,10 @@ class RuntimeInformation {
   }
 
   void setColumnNames(
-      const ad_utility::HashMap<std::string, size_t>& columnMap) {
+      const ad_utility::HashMap<SparqlVariable, size_t>& columnMap) {
     _columnNames.resize(columnMap.size());
     for (const auto& column : columnMap) {
-      _columnNames[column.second] = column.first;
+      _columnNames[column.second] = column.first.asString();
     }
   }
 

@@ -8,6 +8,7 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include "../parser/ParsedQuery.h"
 #include "../util/Conversions.h"
 #include "../util/HashSet.h"
 #include "./Operation.h"
@@ -22,6 +23,8 @@ using std::string;
 class QueryExecutionTree {
  public:
   explicit QueryExecutionTree(QueryExecutionContext* const qec);
+
+  using VariableColumnMap = ad_utility::HashMap<SparqlVariable, size_t>;
 
   enum OperationType {
     UNDEFINED = 0,
@@ -53,7 +56,7 @@ class QueryExecutionTree {
 
   const QueryExecutionContext* getQec() const { return _qec; }
 
-  const ad_utility::HashMap<string, size_t>& getVariableColumns() const {
+  const VariableColumnMap& getVariableColumns() const {
     return _variableColumnMap;
   }
 
@@ -65,17 +68,17 @@ class QueryExecutionTree {
     return _type == OperationType::UNDEFINED || !_rootOperation;
   }
 
-  void setVariableColumn(const string& var, size_t i);
+  void setVariableColumn(const SparqlVariable& var, size_t i);
 
-  size_t getVariableColumn(const string& var) const;
+  size_t getVariableColumn(const SparqlVariable& var) const;
 
-  void setVariableColumns(const ad_utility::HashMap<string, size_t>& map);
+  void setVariableColumns(const VariableColumnMap& map);
 
-  void setContextVars(const std::unordered_set<string>& set) {
+  void setContextVars(const std::unordered_set<SparqlVariable>& set) {
     _contextVars = set;
   }
 
-  const std::unordered_set<string>& getContextVars() const {
+  const std::unordered_set<SparqlVariable>& getContextVars() const {
     return _contextVars;
   }
 
@@ -85,22 +88,23 @@ class QueryExecutionTree {
     return _rootOperation->getResult(isRoot());
   }
 
-  void writeResultToStream(std::ostream& out, const vector<string>& selectVars,
+  void writeResultToStream(std::ostream& out,
+                           const vector<SparqlVariable>& selectVars,
                            size_t limit = MAX_NOF_ROWS_IN_RESULT,
                            size_t offset = 0, char sep = '\t') const;
 
-  nlohmann::json writeResultAsJson(const vector<string>& selectVars,
+  nlohmann::json writeResultAsJson(const vector<SparqlVariable>& selectVars,
                                    size_t limit, size_t offset) const;
 
   const std::vector<size_t>& resultSortedOn() const {
     return _rootOperation->getResultSortedOn();
   }
 
-  bool isContextvar(const string& var) const {
+  bool isContextvar(const SparqlVariable& var) const {
     return _contextVars.count(var) > 0;
   }
 
-  void addContextVar(const string& var) { _contextVars.insert(var); }
+  void addContextVar(const SparqlVariable& var) { _contextVars.insert(var); }
 
   void setTextLimit(size_t limit) {
     _rootOperation->setTextLimit(limit);
@@ -122,7 +126,7 @@ class QueryExecutionTree {
                                _rootOperation->getMultiplicity(col));
   }
 
-  bool varCovered(string var) const;
+  bool varCovered(const SparqlVariable& var) const;
 
   bool knownEmptyResult();
 
@@ -172,11 +176,11 @@ class QueryExecutionTree {
 
  private:
   QueryExecutionContext* _qec;  // No ownership
-  ad_utility::HashMap<string, size_t> _variableColumnMap;
+  VariableColumnMap _variableColumnMap;
   std::shared_ptr<Operation>
       _rootOperation;  // Owned child. Will be deleted at deconstruction.
   OperationType _type;
-  std::unordered_set<string> _contextVars;
+  std::unordered_set<SparqlVariable> _contextVars;
   string _asString;
   size_t _indent = 0;  // the indent with which the _asString repr was formatted
   size_t _sizeEstimate;

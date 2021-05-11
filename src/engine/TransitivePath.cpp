@@ -14,8 +14,8 @@
 TransitivePath::TransitivePath(
     QueryExecutionContext* qec, std::shared_ptr<QueryExecutionTree> child,
     bool leftIsVar, bool rightIsVar, size_t leftSubCol, size_t rightSubCol,
-    size_t leftValue, size_t rightValue, const std::string& leftColName,
-    const std::string& rightColName, size_t minDist, size_t maxDist)
+    size_t leftValue, size_t rightValue, const SparqlVariable& leftColName,
+    const SparqlVariable& rightColName, size_t minDist, size_t maxDist)
     : Operation(qec),
       _leftSideTree(nullptr),
       _leftSideCol(-1),
@@ -76,7 +76,7 @@ std::string TransitivePath::getDescriptor() const {
   }
   // Left variable or entity name.
   if (_leftIsVar) {
-    os << _leftColName;
+    os << _leftColName.asString();
   } else {
     os << getIndex()
               .idToOptionalString(_leftValue)
@@ -93,7 +93,7 @@ std::string TransitivePath::getDescriptor() const {
   }
   // Right variable or entity name.
   if (_rightIsVar) {
-    os << _rightColName;
+    os << _rightColName.asString();
   } else {
     os << getIndex()
               .idToOptionalString(_rightValue)
@@ -132,8 +132,7 @@ vector<size_t> TransitivePath::resultSortedOn() const {
 }
 
 // _____________________________________________________________________________
-ad_utility::HashMap<std::string, size_t> TransitivePath::getVariableColumns()
-    const {
+Operation::VariableColumnMap TransitivePath::getVariableColumns() const {
   return _variableColumns;
 }
 
@@ -711,8 +710,8 @@ std::shared_ptr<TransitivePath> TransitivePath::bindLeftSide(
   std::shared_ptr<TransitivePath> p = std::make_shared<TransitivePath>(*this);
   p->_leftSideTree = leftop;
   p->_leftSideCol = inputCol;
-  const ad_utility::HashMap<string, size_t>& var = leftop->getVariableColumns();
-  for (auto col : var) {
+  const VariableColumnMap& var = leftop->getVariableColumns();
+  for (const auto& col : var) {
     if (col.second != inputCol) {
       if (col.second > inputCol) {
         p->_variableColumns[col.first] = col.second + 1;
@@ -732,9 +731,8 @@ std::shared_ptr<TransitivePath> TransitivePath::bindRightSide(
   std::shared_ptr<TransitivePath> p = std::make_shared<TransitivePath>(*this);
   p->_rightSideTree = rightop;
   p->_rightSideCol = inputCol;
-  const ad_utility::HashMap<string, size_t>& var =
-      rightop->getVariableColumns();
-  for (auto col : var) {
+  const VariableColumnMap& var = rightop->getVariableColumns();
+  for (const auto& col : var) {
     if (col.second != inputCol) {
       if (col.second > inputCol) {
         p->_variableColumns[col.first] = col.second + 1;
