@@ -2879,9 +2879,9 @@ std::vector<QueryPlanner::SubtreePlan> QueryPlanner::createJoinCandidates(
         candidates.push_back(std::move(plan));
       }
       return candidates;
-    // If there are two or more join columns and we are not using the
-    // TwoColumnJoin (the if part before this comment), use a multiColumnJoin.
     } else if (jcs.size() >= 2) {
+      // If there are two or more join columns and we are not using the
+      // TwoColumnJoin (the if part before this comment), use a multiColumnJoin.
       SubtreePlan plan = multiColumnJoin(a, b);
       plan._idsOfIncludedNodes = a._idsOfIncludedNodes;
       plan.addAllNodes(b._idsOfIncludedNodes);
