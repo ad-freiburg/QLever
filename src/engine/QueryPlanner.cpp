@@ -2812,7 +2812,6 @@ std::vector<QueryPlanner::SubtreePlan> QueryPlanner::createJoinCandidates(
     // the code. Johannes?
     bool useTwoColumnJoin = false;
     if (useTwoColumnJoin) {
-
       // Forbid a join between two dummies.
       if ((a._qet->getType() == QueryExecutionTree::SCAN &&
            a._qet->getRootOperation()->getResultWidth() == 3) &&
