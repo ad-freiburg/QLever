@@ -2802,10 +2802,18 @@ std::vector<QueryPlanner::SubtreePlan> QueryPlanner::createJoinCandidates(
       return std::vector{optionalJoin(a, b)};
     }
 
-    if (jcs.size() == 2) {
-      // SPECIAL CASE: Cyclic queries -> join on exactly two columns
+    // Disable TwoColumnJoin because it does not work when both input tables
+    // have > 2 columns.
+    //
+    // TODO: The TwoColumnJoin works when one input table has exactly 2 columns
+    // and the join columns are 0 and 1 in that order; see TwoColumnJoin.cpp .
+    // The bool useTwoColumnJoin could be set accordingly. However, I (Hannah)
+    // do not know how to access the size of the input tables at this point in
+    // the code. Johannes?
+    bool useTwoColumnJoin = false;
+    if (useTwoColumnJoin) {
 
-      // Forbd a join between two dummies.
+      // Forbid a join between two dummies.
       if ((a._qet->getType() == QueryExecutionTree::SCAN &&
            a._qet->getRootOperation()->getResultWidth() == 3) &&
           (b._qet->getType() == QueryExecutionTree::SCAN &&
@@ -2872,8 +2880,9 @@ std::vector<QueryPlanner::SubtreePlan> QueryPlanner::createJoinCandidates(
         candidates.push_back(std::move(plan));
       }
       return candidates;
-    } else if (jcs.size() > 2) {
-      // this can happen when e.g. subqueries are used
+    // If there are two or more join columns and we are not using the
+    // TwoColumnJoin (the if part before this comment), use a multiColumnJoin.
+    } else if (jcs.size() >= 2) {
       SubtreePlan plan = multiColumnJoin(a, b);
       plan._idsOfIncludedNodes = a._idsOfIncludedNodes;
       plan.addAllNodes(b._idsOfIncludedNodes);
