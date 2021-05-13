@@ -1489,7 +1489,7 @@ void Index::initializeVocabularySettingsBuild() {
     if constexpr (std::is_same_v<std::decay_t<Parser>, TurtleParserDummy>) {
       bool v = j["ascii-prefixes-only"];
       if (v) {
-        LOG(WARN) << WARNING_ASCII_ONLY_PREFIXES;
+        LOG(WARN) << WARNING_ASCII_ONLY_PREFIXES << std:endl;
         _onlyAsciiTurtlePrefixes = true;
       } else {
         _onlyAsciiTurtlePrefixes = false;
@@ -1497,7 +1497,7 @@ void Index::initializeVocabularySettingsBuild() {
     } else {
       LOG(WARN) << "You specified the ascii-prefixes-only but a parser that is "
                    "not the Turtle stream parser. This means that this setting "
-                   "is ignored\n";
+                   "is ignored." << std:endl;
     }
   }
 
@@ -1506,13 +1506,14 @@ void Index::initializeVocabularySettingsBuild() {
     LOG(INFO) << "Overriding setting num-triples-per-partial-vocab to "
               << _numTriplesPerPartialVocab
               << " This might influence performance / memory usage during "
-                 "index build\n";
+                 "index build." << std:endl;
   }
 
   if (j.count("parser-batch-size")) {
     _parserBatchSize = j["parser-batch-size"];
     LOG(INFO) << "Overriding setting parser-batch-size to " << _parserBatchSize
-              << " This might influence performance during index build\n";
+              << " This might influence performance during index build."
+              << std::endl;
   }
 }
 
