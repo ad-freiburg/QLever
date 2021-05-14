@@ -213,22 +213,67 @@ void Server::process(Socket* client) {
       qet.recursivelySetTimeoutTimer(timeoutTimer);
       LOG(TRACE) << qet.asString() << std::endl;
 
+      ResultFormat result_format = ResultFormat::INTERNAL_JSON;
+
+      // Check the accept header for known mime types
+      size_t accept_pos = headers.find("Accept");
+      if (accept_pos != std::string::npos) {
+        size_t header_end = headers.find("\r\n", accept_pos);
+        size_t sparql_json_pos =
+            headers.find("application/sparql-results+json");
+        size_t tsv_pos = headers.find("text/tab-separated-values");
+        size_t csv_pos = headers.find("text/csv");
+
+        // TODO: This doesn't support lists of mime types properly. Supporting
+        // those should be done with a library though.
+        if (sparql_json_pos != std::string::npos &&
+            (header_end == std::string::npos || sparql_json_pos < header_end)) {
+          result_format = ResultFormat::SPARQL_JSON;
+        } else if (tsv_pos != std::string::npos &&
+                   (header_end == std::string::npos || tsv_pos < header_end)) {
+          result_format = ResultFormat::TSV;
+        } else if (csv_pos != std::string::npos &&
+                   (header_end == std::string::npos || csv_pos < header_end)) {
+          result_format = ResultFormat::CSV;
+        }
+      }
+
+      // Apply overrides from the action
       if (ad_utility::getLowercase(params["action"]) == "csv_export") {
         // CSV export
-        response = composeResponseSepValues(pq, qet, ',');
-        contentType =
-            "text/csv\r\n"
-            "Content-Disposition: attachment;filename=export.csv";
+        result_format = ResultFormat::CSV;
       } else if (ad_utility::getLowercase(params["action"]) == "tsv_export") {
         // TSV export
-        response = composeResponseSepValues(pq, qet, '\t');
-        contentType =
-            "text/tab-separated-values\r\n"
-            "Content-Disposition: attachment;filename=export.tsv";
-      } else {
-        // Normal case: JSON response
-        response = composeResponseJson(pq, qet, maxSend);
-        contentType = "application/json";
+        result_format = ResultFormat::TSV;
+      } else if (ad_utility::getLowercase(params["action"]) ==
+                 "sparql_json_export") {
+        result_format = ResultFormat::SPARQL_JSON;
+      }
+      switch (result_format) {
+        case ResultFormat::CSV: {
+          // CSV export
+          response = composeResponseSepValues(pq, qet, ',');
+          contentType =
+              "text/csv\r\n"
+              "Content-Disposition: attachment;filename=export.csv";
+        } break;
+        case ResultFormat::TSV: {
+          // TSV export
+          response = composeResponseSepValues(pq, qet, '\t');
+          contentType =
+              "text/tab-separated-values\r\n"
+              "Content-Disposition: attachment;filename=export.tsv";
+        } break;
+        case ResultFormat::SPARQL_JSON: {
+          // Sparql json export
+          response = composeResponseSparqlJson(pq, qet, maxSend);
+          contentType = "application/sparql-results+json";
+        } break;
+        case ResultFormat::INTERNAL_JSON: {
+          // Normal case: JSON response
+          response = composeResponseJson(pq, qet, maxSend);
+          contentType = "application/json";
+        } break;
       }
       // Print the runtime info. This needs to be done after the query
       // was computed.
@@ -403,6 +448,30 @@ string Server::composeResponseJson(const ParsedQuery& query,
       std::to_string(_requestProcessingTimer.usecs() / 1000.0) + "ms";
   j["time"]["computeResult"] = std::to_string(compResultUsecs / 1000.0) + "ms";
 
+  return j.dump(4);
+}
+
+// _____________________________________________________________________________
+string Server::composeResponseSparqlJson(const ParsedQuery& query,
+                                         const QueryExecutionTree& qet,
+                                         size_t sendMax) const {
+  shared_ptr<const ResultTable> rt = qet.getResult();
+  _requestProcessingTimer.stop();
+  nlohmann::json j;
+  {
+    size_t limit = MAX_NOF_ROWS_IN_RESULT;
+    size_t offset = 0;
+    if (query._limit.size() > 0) {
+      limit = static_cast<size_t>(atol(query._limit.c_str()));
+    }
+    if (query._offset.size() > 0) {
+      offset = static_cast<size_t>(atol(query._offset.c_str()));
+    }
+    _requestProcessingTimer.cont();
+    j = qet.writeResultAsSparqlJson(query._selectedVariables,
+                                    std::min(limit, sendMax), offset);
+    _requestProcessingTimer.stop();
+  }
   return j.dump(4);
 }
 
