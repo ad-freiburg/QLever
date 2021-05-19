@@ -850,7 +850,7 @@ TEST(QueryPlannerTest, threeVarTriplesTCJ) {
     QueryPlanner qp(nullptr);
     QueryExecutionTree qet = qp.createExecutionTree(pq);
     ASSERT_EQ(
-        "{\n  MULTI_COLUMN_JOIN\n  {\n      SCAN FOR FULL INDEX PSO (DUMMY "
+        "{\n  MULTI_COLUMN_JOIN\n  {\n    SCAN FOR FULL INDEX PSO (DUMMY "
         "OPERATION)\n    qet-width: 3 \n  } join-columns: [0 & 1]\n  |X|\n  "
         "{\n    SCAN OPS with O = \"<x>\"\n    qet-width: 2 \n  } "
         "join-columns: [0 & 1]\n  qet-width: 3 \n}",
