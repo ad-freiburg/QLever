@@ -850,9 +850,9 @@ TEST(QueryPlannerTest, threeVarTriplesTCJ) {
     QueryPlanner qp(nullptr);
     QueryExecutionTree qet = qp.createExecutionTree(pq);
     ASSERT_EQ(
-        "{\n  TWO_COLUMN_JOIN\n    {\n    SCAN FOR FULL INDEX POS (DUMMY "
-        "OPERATION)\n    qet-width: 3 \n  }\n  join-columns: [0 & 2]\n  |X|\n  "
-        "  {\n    SCAN OPS with O = \"<x>\"\n    qet-width: 2 \n  }\n  "
+        "{\n  MULTI_COLUMN_JOIN\n  {\n      SCAN FOR FULL INDEX PSO (DUMMY "
+        "OPERATION)\n    qet-width: 3 \n  } join-columns: [0 & 1]\n  |X|\n  "
+        "{\n    SCAN OPS with O = \"<x>\"\n    qet-width: 2 \n  } "
         "join-columns: [0 & 1]\n  qet-width: 3 \n}",
         qet.asString());
   } catch (const ad_semsearch::Exception& e) {
