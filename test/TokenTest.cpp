@@ -182,7 +182,7 @@ TEST(TokenizerTest, StringLiterals) {
   ASSERT_FALSE(H::matchStringLiteralLongSingleQuoteString(sSingleNoMultiline2));
 }
 
-//static constexpr auto pnCharsUGrp = cls(TurtleTokenCtre::PnCharsUString);
+// static constexpr auto pnCharsUGrp = cls(TurtleTokenCtre::PnCharsUString);
 TEST(TokenizerTest, Entities) {
   TurtleToken t;
   string iriref1 = "<>";
