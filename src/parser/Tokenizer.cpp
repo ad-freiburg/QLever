@@ -98,6 +98,8 @@ const RE2& Tokenizer::idToRegex(const TurtleTokenId reg) {
       return _tokens.PnameNS;
     case TurtleTokenId::PnameLN:
       return _tokens.PnameLN;
+    case TurtleTokenId::PnLocal:
+      return _tokens.PnLocal;
     case TurtleTokenId::BlankNodeLabel:
       return _tokens.BlankNodeLabel;
     case TurtleTokenId::WsMultiple:

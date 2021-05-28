@@ -3,10 +3,10 @@
 // Chair of Algorithms and Data Structures.
 // Author: Florian Kramer (florian.kramer@mail.uni-freiburg.de)
 
+#include <gtest/gtest.h>
+
 #include <array>
 #include <vector>
-
-#include <gtest/gtest.h>
 
 #include "../src/engine/IdTable.h"
 #include "../src/global/Id.h"
@@ -503,7 +503,7 @@ TEST(IdTableStaticTest, iterating) {
   ASSERT_EQ(t1.end(), it);
 
   size_t row_index = 0;
-  for (const IdTableStatic<NUM_COLS>::row_type row : t1) {
+  for (const IdTableStatic<NUM_COLS>::row_type& row : t1) {
     for (size_t i = 0; i < NUM_COLS; i++) {
       ASSERT_EQ(row_index * NUM_COLS + i + 1, row[i]);
     }

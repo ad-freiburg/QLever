@@ -174,6 +174,8 @@ struct TurtleTokenCtre {
       grp(cls(PnCharsUString + ":0-9") + "|" + PlxString) +
       grp("\\.*" + grp(TmpNoDot)) + "*";
 
+  static constexpr fixed_string PnLocal = grp(PnLocalString);
+
   static constexpr fixed_string PnameLNString =
       grp(PnameNSString) + grp(PnLocalString);
 
@@ -334,6 +336,8 @@ class TokenizerCtre {
       return F::template process<TurtleTokenCtre::PnameLN>(_data);
     } else if constexpr (id == TurtleTokenId::BlankNodeLabel) {
       return F::template process<TurtleTokenCtre::BlankNodeLabel>(_data);
+    } else if constexpr (id == TurtleTokenId::PnLocal) {
+      return F::template process<TurtleTokenCtre::PnLocal>(_data);
     } else {
       switch (id) {
         case TurtleTokenId::TurtlePrefix:

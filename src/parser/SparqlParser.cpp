@@ -280,21 +280,21 @@ void SparqlParser::parseWhere(ParsedQuery* query,
       std::string inVar;
       bool rename = false;
       bool isString = true;
-      bool isSum = false;
+      char binaryOperator = 0;
       std::string inVar2;
       int64_t val = 0;
       if (_lexer.accept(SparqlToken::Type::VARIABLE)) {
         rename = true;
         inVar = _lexer.current().raw;
         if (_lexer.accept(SparqlToken::Type::SYMBOL)) {
-          if (_lexer.current().raw != "+") {
+          binaryOperator = _lexer.current().raw[0];
+          if (binaryOperator == 0 ||
+              "+-*/"s.find(binaryOperator) == std::string::npos) {
             throw std::runtime_error(
-                "A sum of two variables is currently the only"
-                "supported arithmetic bind expression, but symbol after first "
-                "variable was " +
-                _lexer.current().raw);
+                "BIND expressions currently only support the binary operators"
+                "+-*/ but encountered \"" +
+                std::string(1, binaryOperator) + "\"");
           }
-          isSum = true;
           _lexer.expect(SparqlToken::Type::VARIABLE);
           inVar2 = _lexer.current().raw;
         }
@@ -314,8 +314,9 @@ void SparqlParser::parseWhere(ParsedQuery* query,
       _lexer.expect("as");
       _lexer.expect(SparqlToken::Type::VARIABLE);
       GraphPatternOperation::Bind b;
-      if (isSum) {
-        b._expressionVariant = GraphPatternOperation::Bind::Sum{inVar, inVar2};
+      if (binaryOperator) {
+        b._expressionVariant = GraphPatternOperation::Bind::BinaryOperation{
+            inVar, inVar2, std::string(1, binaryOperator)};
       } else if (rename) {
         b._expressionVariant = GraphPatternOperation::Bind::Rename{inVar};
       } else {
@@ -331,6 +332,19 @@ void SparqlParser::parseWhere(ParsedQuery* query,
       _lexer.expect(")");
       currentPattern->_children.emplace_back(std::move(b));
       // the dot after the bind is optional
+      _lexer.accept(".");
+    } else if (_lexer.accept("minus")) {
+      currentPattern->_children.emplace_back(
+          GraphPatternOperation::Minus{ParsedQuery::GraphPattern()});
+      auto& opt =
+          currentPattern->_children.back().get<GraphPatternOperation::Minus>();
+      auto& child = opt._child;
+      child._optional = false;
+      child._id = query->_numGraphPatterns;
+      query->_numGraphPatterns++;
+      _lexer.expect("{");
+      // Recursively call parseWhere to parse the subtrahend.
+      parseWhere(query, &child);
       _lexer.accept(".");
     } else if (_lexer.accept("{")) {
       // Subquery or union
@@ -619,8 +633,7 @@ void SparqlParser::addWhereTriple(
 // _____________________________________________________________________________
 void SparqlParser::parseSolutionModifiers(ParsedQuery* query) {
   while (!_lexer.empty() && !_lexer.accept("}")) {
-    if (_lexer.accept("order")) {
-      _lexer.expect("by");
+    if (_lexer.accept(SparqlToken::Type::ORDER_BY)) {
       bool reached_end = false;
       while (!reached_end) {
         if (_lexer.accept(SparqlToken::Type::VARIABLE)) {
@@ -648,8 +661,7 @@ void SparqlParser::parseSolutionModifiers(ParsedQuery* query) {
     } else if (_lexer.accept("offset")) {
       _lexer.expect(SparqlToken::Type::INTEGER);
       query->_offset = _lexer.current().raw;
-    } else if (_lexer.accept("group")) {
-      _lexer.expect("by");
+    } else if (_lexer.accept(SparqlToken::Type::GROUP_BY)) {
       _lexer.expect(SparqlToken::Type::VARIABLE);
       query->_groupByVariables.emplace_back(_lexer.current().raw);
       while (_lexer.accept(SparqlToken::Type::VARIABLE)) {

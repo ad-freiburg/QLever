@@ -6,13 +6,13 @@
 
 #include <gtest/gtest.h>
 #include <re2/re2.h>
-
 #include <regex>
-
 #include "../util/Exception.h"
+#include "../util/HashSet.h"
 #include "../util/Log.h"
 #include "./TurtleTokenId.h"
 
+#include "./RdfEscaping.h"
 using re2::RE2;
 using namespace std::string_literals;
 
@@ -21,144 +21,6 @@ using namespace std::string_literals;
  * at runtime
  */
 struct TurtleToken {
-  /**
-   * @brief convert a RDF Literal to a unified form that is used inside QLever
-   *
-   * RDFLiterals in Turtle or Sparql can have several forms: Either starting
-   * with one (" or ') quotation mark and containing escape sequences like
-   * "\\\t" or with three (""" or ''') quotation marks and allowing most control
-   * sequences to be contained in the string directly.
-   *
-   * This function converts any of this forms to a literal that starts and ends
-   * with a single quotation mark '"' and contains the originally escaped
-   * characters directly, e.g. "al\"pha" becomes "al"pha".
-   *
-   * This is NOT a valid RDF form of literals, but this format is only used
-   * inside QLever. By stripping the leading and trailing quotation mark and
-   * possible langtags or datatype URIS one can directly obtain the actual
-   * content of the literal.
-   *
-   * @param literal
-   * @return
-   */
-  static std::string normalizeRDFLiteral(std::string_view literal) {
-    std::string res = "\"";
-    auto lastQuot = literal.find_last_of("\"\'");
-    AD_CHECK(lastQuot != std::string_view::npos);
-    auto langtagOrDatatype = literal.substr(lastQuot + 1);
-    literal.remove_suffix(literal.size() - lastQuot - 1);
-    if (ad_utility::startsWith(literal, "\"\"\"") ||
-        ad_utility::startsWith(literal, "'''")) {
-      AD_CHECK(ad_utility::endsWith(literal, literal.substr(0, 3)));
-      literal.remove_prefix(3);
-      literal.remove_suffix(3);
-    } else {
-      AD_CHECK(ad_utility::startsWith(literal, "\"") ||
-               ad_utility::startsWith(literal, "'"));
-      AD_CHECK(ad_utility::endsWith(literal, literal.substr(0, 1)));
-      literal.remove_prefix(1);
-      literal.remove_suffix(1);
-    }
-    auto pos = literal.find('\\');
-    while (pos != literal.npos) {
-      res.append(literal.begin(), literal.begin() + pos);
-      AD_CHECK(pos + 1 <= literal.size());
-      switch (literal[pos + 1]) {
-        case 't':
-          res.push_back('\t');
-          break;
-        case 'n':
-          res.push_back('\n');
-          break;
-        case 'r':
-          res.push_back('\r');
-          break;
-        case 'b':
-          res.push_back('\b');
-          break;
-        case 'f':
-          res.push_back('\f');
-          break;
-        case '"':
-          res.push_back('\"');
-          break;
-        case '\'':
-          res.push_back('\'');
-          break;
-        case '\\':
-          res.push_back('\\');
-          break;
-
-        default:
-          throw std::runtime_error(
-              "Illegal escape sequence in RDF Literal. This should never "
-              "happen, please report this");
-      }
-      literal.remove_prefix(pos + 2);
-      pos = literal.find('\\');
-    }
-    res.append(literal);
-    res.push_back('"');
-    res.append(langtagOrDatatype);
-    return res;
-  }
-
-  /**
-   * @brief take an unescaped rdfLiteral that has single "" quotes as created by
-   * normalizeRDFLiteral and escape it again
-   */
-  static std::string escapeRDFLiteral(std::string_view literal) {
-    AD_CHECK(ad_utility::startsWith(literal, "\""));
-    std::string res = "\"";
-    auto lastQuot = literal.find_last_of('"');
-    AD_CHECK(lastQuot != std::string_view::npos);
-    auto langtagOrDatatype = literal.substr(lastQuot + 1);
-    literal.remove_suffix(literal.size() - lastQuot);
-    literal.remove_prefix(1);
-    const string charactersToEscape = "\f\n\t\b\r\\\"\'";
-    auto pos = literal.find_first_of(charactersToEscape);
-    while (pos != literal.npos) {
-      res.append(literal.begin(), literal.begin() + pos);
-      switch (literal[pos]) {
-        case '\t':
-          res.append("\\t");
-          break;
-        case '\n':
-          res.append("\\n");
-          break;
-        case '\r':
-          res.append("\\r");
-          break;
-        case '\b':
-          res.append("\\b");
-          break;
-        case '\f':
-          res.append("\\f");
-          break;
-        case '"':
-          res.append("\\\"");
-          break;
-        case '\'':
-          res.append("\\\'");
-          break;
-        case '\\':
-          res.append("\\\\");
-          break;
-
-        default:
-          throw std::runtime_error(
-              "Illegal switch value in escapeRDFLiteral. This should never "
-              "happen, please report this");
-      }
-      literal.remove_prefix(pos + 1);
-      pos = literal.find_first_of(charactersToEscape);
-    }
-    res.append(literal);
-    res.push_back('"');
-    res.append(langtagOrDatatype);
-    return res;
-  }
-
   using string = std::string;
   TurtleToken()
       // those constants are always skipped, so they don't need a group around
@@ -196,6 +58,7 @@ struct TurtleToken {
         Iriref(grp(IrirefString)),
         PnameNS(grp(PnameNSString)),
         PnameLN(grp(PnameLNString)),
+        PnLocal(grp(PnLocalString)),
         BlankNodeLabel(grp(BlankNodeLabelString)),
 
         WsMultiple(grp(WsMultipleString)),
@@ -313,6 +176,7 @@ struct TurtleToken {
 
   const string PnameLNString = grp(PnameNSString) + grp(PnLocalString);
   const RE2 PnameLN;
+  const RE2 PnLocal;
 
   const string BlankNodeLabelString = "_:" + cls(PnCharsUString + "0-9") +
                                       grp("\\.*" + cls(PnCharsString)) + "*";
@@ -444,11 +308,10 @@ class Tokenizer {
   void skipWhitespace() {
     auto v = view();
     auto pos = v.find_first_not_of("\x20\x09\x0D\x0A");
-    if (pos != string::npos) {
-      _data.remove_prefix(pos);
+    if (pos == string::npos) {
+      pos = _data.size();
     }
-    // auto success = skip(_tokens.WsMultiple);
-    // assert(success);
+    _data.remove_prefix(pos);
     return;
   }
 

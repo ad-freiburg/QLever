@@ -29,6 +29,7 @@ enum class TurtleTokenId : int {
   Iriref,
   PnameNS,
   PnameLN,
+  PnLocal,
   BlankNodeLabel,
   WsMultiple,
   Anon,

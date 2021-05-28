@@ -11,7 +11,9 @@
 
 #include "../util/Conversions.h"
 #include "../util/StringUtils.h"
+#include "./RdfEscaping.h"
 #include "ParseException.h"
+#include "Tokenizer.h"
 
 using std::string;
 using std::vector;
@@ -282,7 +284,8 @@ void ParsedQuery::expandPrefixes() {
         } else if constexpr (std::is_same_v<T,
                                             GraphPatternOperation::Optional> ||
                              std::is_same_v<
-                                 T, GraphPatternOperation::GroupGraphPattern>) {
+                                 T, GraphPatternOperation::GroupGraphPattern> ||
+                             std::is_same_v<T, GraphPatternOperation::Minus>) {
           graphPatterns.push_back(&arg._child);
         } else if constexpr (std::is_same_v<T, GraphPatternOperation::Union>) {
           graphPatterns.push_back(&arg._child1);
@@ -371,16 +374,12 @@ void ParsedQuery::expandPrefix(
       from += 2;
     }
     if (i != string::npos && i >= from &&
-        prefixMap.count(item.substr(from, i - from)) > 0) {
-      string prefixUri = prefixMap.find(item.substr(from, i - from))->second;
-      if (from == 0) {
-        item = prefixUri.substr(0, prefixUri.size() - 1) + item.substr(i + 1) +
-               '>';
-      } else {
-        item = item.substr(0, from) +
-               prefixUri.substr(0, prefixUri.size() - 1) + item.substr(i + 1) +
-               '>';
-      }
+        prefixMap.contains(item.substr(from, i - from))) {
+      string prefixUri = prefixMap.at(item.substr(from, i - from));
+      // Note that substr(0, 0) yields the empty string.
+      item = item.substr(0, from) + prefixUri.substr(0, prefixUri.size() - 1) +
+             item.substr(i + 1) + '>';
+      item = RdfEscaping::unescapePrefixedIri(item);
     }
     if (langtag) {
       item =
@@ -548,7 +547,8 @@ void ParsedQuery::GraphPattern::recomputeIds(size_t* id_count) {
         arg._child2.recomputeIds(id_count);
       } else if constexpr (std::is_same_v<T, GraphPatternOperation::Optional> ||
                            std::is_same_v<
-                               T, GraphPatternOperation::GroupGraphPattern>) {
+                               T, GraphPatternOperation::GroupGraphPattern> ||
+                           std::is_same_v<T, GraphPatternOperation::Minus>) {
         arg._child.recomputeIds(id_count);
       } else if constexpr (std::is_same_v<T,
                                           GraphPatternOperation::TransPath>) {
@@ -621,6 +621,9 @@ void GraphPatternOperation::toString(std::ostringstream& os,
     } else if constexpr (std::is_same_v<T, Bind>) {
       os << "Some kind of BIND\n";
       // TODO<joka921> proper ToString (are they used for something?)
+    } else if constexpr (std::is_same_v<T, Minus>) {
+      os << "MINUS ";
+      arg._child.toString(os, indentation);
     } else {
       static_assert(std::is_same_v<T, TransPath>);
       os << "TRANS PATH from " << arg._left << " to " << arg._right
