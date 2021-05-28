@@ -6,8 +6,8 @@
 #include <sys/types.h>
 
 #include <iomanip>
-#include <sstream>
 #include <memory>
+#include <sstream>
 
 #include "Synchronized.h"
 
