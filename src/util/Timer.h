@@ -7,6 +7,7 @@
 
 #include <iomanip>
 #include <sstream>
+#include <memory>
 
 #include "Synchronized.h"
 
