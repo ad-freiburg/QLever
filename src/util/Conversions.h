@@ -11,12 +11,18 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
 #include <cmath>
 #include <iostream>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "../global/Constants.h"
+#include "../index/GeometricTypes.h"
+#include "../util/HashSet.h"
+#include "../util/VerboseStringToFloatConversions.h"
+#include "../util/Log.h"
 #include "./Exception.h"
 #include "./StringUtils.h"
 
@@ -32,7 +38,7 @@ namespace ad_utility {
 //! IndexWords are not necessarily readable but lexicographical
 //! comparison should yield the same ordering that one would expect from
 //! a natural ordering of the values invloved.
-inline string convertValueLiteralToIndexWord(const string& orig);
+inline std::variant<string, float, ad_geo::Rectangle> convertValueLiteralToIndexWord(const string& orig, bool considerBoundingBox = false);
 
 //! Convert an index word to an ontology value.
 //! Ontology values have a prefix and a readable format apart form that.
@@ -61,7 +67,8 @@ inline string convertIndexWordToFloatString(const string& indexWord);
 
 //! Converts strings like this: ":v:float:PP0*2E0*1234F to "12.34 and
 //! :v:float:M-0*1E9*876F to -0.123".
-inline float convertIndexWordToFloat(const string& indexWord);
+// TODO<joka921> this was removed because it is illegal to call with the float-etc-hack.
+//inline float convertIndexWordToFloat(const string& indexWord);
 
 //! Brings a date to the format:
 //! return string(VALUE_DATE_PREFIX) + year + month + day +
@@ -89,7 +96,7 @@ inline bool isXsdValue(const string& val);
 inline bool isNumeric(const string& val);
 
 //! Converts numeric strings (as determined by isNumeric()) into index words
-inline string convertNumericToIndexWord(const string& val);
+inline float convertNumericToIndexWord(const string& val);
 
 //! Convert a language tag like "@en" to the corresponding entity uri
 //! for the efficient language filter
@@ -99,7 +106,7 @@ inline std::string convertToLanguageTaggedPredicate(const string& pred,
                                                     const string& langtag);
 
 // _____________________________________________________________________________
-string convertValueLiteralToIndexWord(const string& orig) {
+std::variant<string, float, ad_geo::Rectangle> convertValueLiteralToIndexWord(const string& orig, bool considerBoundingBox) {
   /*
    * Value literals can have one of two forms
    * 0) "123"^^<http://www.w3.org/2001/XMLSchema#integer>
@@ -108,6 +115,7 @@ string convertValueLiteralToIndexWord(const string& orig) {
    * TODO: This ignores the URI such that xsd:integer == foo:integer ==
    * <http://baz#integer>
    */
+  static ad_utility::HashSet<string> numericTypes {"int", "integer", "float", "double", "decimal"};
   assert(orig.size() > 0);
   assert(orig[0] == '\"');
   string value;
@@ -137,12 +145,14 @@ string convertValueLiteralToIndexWord(const string& orig) {
   if (type == "dateTime" || type == "gYear" || type == "gYearMonth" ||
       type == "date") {
     return convertDateToIndexWord(value);
-  } else {
+  } else if (numericTypes.contains(type)) {
+    // TODO<joka921> we currently do not preserve the original datatype
+    return ad_utility::stof(value);
+    /*
     // No longer convert to int. instead always convert to float and
     // have a special marker at the very end to tell if the original number
     // was int for float. The benefit: can compare float with int that way.
     if (type == "int" || type == "integer") {
-      return convertFloatStringToIndexWord(value + ".0", NumericType::INTEGER);
     }
     // We treat double and decimal as synonyms for float
     if (type == "float") {
@@ -152,6 +162,14 @@ string convertValueLiteralToIndexWord(const string& orig) {
     } else if (type == "decimal") {
       return convertFloatStringToIndexWord(value, NumericType::DECIMAL);
     }
+     */
+  } else if (considerBoundingBox && type == "wktLiteral") {
+    auto optionalBoundingBox = ad_geo::parseAxisRectancle(value);
+    if (!optionalBoundingBox) {
+      LOG(ERROR) << "The literal " + value + "Should have been parsed as a bounding box, but this was not possible" << std::endl;
+    }
+    AD_CHECK(optionalBoundingBox);
+    return *optionalBoundingBox;
   }
   return orig;
 }
@@ -391,6 +409,7 @@ string convertIndexWordToFloatString(const string& indexWord) {
   return os.str();
 }
 
+/*
 // _____________________________________________________________________________
 float convertIndexWordToFloat(const string& indexWord) {
   size_t prefixLength = std::char_traits<char>::length(VALUE_FLOAT_PREFIX);
@@ -441,6 +460,7 @@ float convertIndexWordToFloat(const string& indexWord) {
     }
   }
 }
+ */
 
 // _____________________________________________________________________________
 string normalizeDate(const string& orig) {
@@ -607,6 +627,20 @@ bool isXsdValue(const string& val) {
   // Search for the last quote and check if it is followed by ^^.
   // NOTE: searching for "^^ starting at position 1 (as done previously) fails
   // for literal "\"^^"@en (which is contained in the RDF dump of DBpedia).
+  //
+  // HACK OSM (Hannah 14.05.21): Make sure that only literals of type
+  // ^^<http://www.w3.org/2001/XMLSchema#...> are recognized as XSD values.
+  // For example, <http://www.opengis.net/ont/geosparql#wktLiteral> is not an
+  // XSD value and should not be recognized as one because it cannot be
+  // externalized otherwise.
+  /*
+  size_t posLastQuote = val.rfind("\"");
+  return !val.empty() && val[0] == '\"' && posLastQuote > 0 &&
+         val.find("^^", posLastQuote) != string::npos &&
+         val.size() > posLastQuote + 37 && val[posLastQuote + 27] == 'X' &&
+         val[posLastQuote + 29] == 'L' && val[posLastQuote + 36] == '#';
+         */
+  // OSM-HACK:Johannes: reinstate the old Version, there now should be another way to externalize the geometries.
   size_t posLastQuote = val.rfind("\"");
   return !val.empty() && val[0] == '\"' && posLastQuote > 0 &&
          val.find("^^", posLastQuote) != string::npos;
@@ -630,7 +664,9 @@ bool isNumeric(const string& val) {
 }
 
 // _____________________________________________________________________________
-string convertNumericToIndexWord(const string& val) {
+float convertNumericToIndexWord(const string& val) {
+  return ad_utility::stof(val);
+  /*
   NumericType type = NumericType::FLOAT;
   string tmp = val;
   if (tmp.find('.') == string::npos) {
@@ -638,6 +674,7 @@ string convertNumericToIndexWord(const string& val) {
     type = NumericType::INTEGER;
   }
   return convertFloatStringToIndexWord(tmp, type);
+   */
 }
 
 // _________________________________________________________

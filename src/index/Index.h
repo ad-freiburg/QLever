@@ -184,6 +184,10 @@ class Index {
     return _vocab.idToOptionalString(id);
   }
 
+ float idToFloat(Id id) const {
+    return _vocab.idToFloat(id);
+  }
+
   const vector<PatternID>& getHasPattern() const;
   const CompactStringVector<Id, Id>& getHasPredicate() const;
   const CompactStringVector<size_t, Id>& getPatterns() const;
@@ -471,7 +475,7 @@ class Index {
   bool _onDiskLiterals = false;
   bool _keepTempFiles = false;
   json _configurationJson;
-  Vocabulary<CompressedString, TripleComponentComparator> _vocab;
+  RdfsVocabulary _vocab;
   size_t _totalVocabularySize = 0;
   bool _vocabPrefixCompressed = true;
   Vocabulary<std::string, SimpleStringComparator> _textVocab;

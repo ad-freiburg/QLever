@@ -10,11 +10,50 @@
 #include "../util/TupleHelpers.h"
 #include "./ConstantsIndexCreation.h"
 #include "./StringSortComparator.h"
+#include "./Vocabulary.h"
 
 #ifndef QLEVER_INDEXBUILDERTYPES_H
 #define QLEVER_INDEXBUILDERTYPES_H
 
+inline auto createAllVocabTypesTuple = []() {
+  auto inner = []<typename... Args>(const Args&&...) {
+    return std::tuple<std::string, std::decay_t<Args>...>{};
+  };
+  return std::apply(inner, RdfsVocabulary::AdditionalValuesTuple{});
+};
+
+using AllVocabTypesTuple = std::invoke_result_t<decltype(createAllVocabTypesTuple)>;
+
+inline auto createVariantDummy = []() {
+  auto inner = []<typename... Args>(const Args&&...) {
+    return std::variant<std::string, std::decay_t<Args>...>{};
+  };
+  return std::apply(inner, RdfsVocabulary::AdditionalValuesTuple{});
+};
+
+
+
+using TripleObject = std::invoke_result_t<decltype(createVariantDummy)>;
+
+inline std::string tripleObjectToString (const TripleObject& t) {
+    auto visitor = []<typename T>(const T& el) {
+    if constexpr (std::is_same_v<T, string>) {
+      return el;
+    } else {
+      using std::to_string;;
+      return to_string(el);
+    }
+  };
+    return std::visit(visitor, t);
+};
+
 using Triple = std::array<std::string, 3>;
+struct TransformedTriple {
+  TransformedTriple(Triple t) : _subject{std::move(t[0])}, _predicate{std::move(t[1])}, _object(std::move(t[2])) {}
+  std::string _subject;
+  std::string _predicate;
+  TripleObject _object;
+};
 
 /// named value type for the ItemMap
 struct IdAndSplitVal {
@@ -22,9 +61,36 @@ struct IdAndSplitVal {
   TripleComponentComparator::SplitVal m_splitVal;
 };
 
-using ItemMap = ad_utility::HashMap<std::string, IdAndSplitVal>;
+template<typename Serializer>
+void serialize(Serializer& serializer, IdAndSplitVal& spl) {
+  serializer & spl.m_id;
+  serializer & spl.m_splitVal;
+}
+
+template <typename Serializer>
+void serialize(Serializer& serializer, const IdAndSplitVal& string) {
+  static_assert(Serializer::IsWriteSerializer);
+  return serialize(serializer, const_cast<IdAndSplitVal&>(string));
+}
+
+inline auto createHashMapTupleDummy = []() {
+  auto inner = []<typename... Args>(const Args&&...) {
+    return std::tuple{ad_utility::HashMap<std::string, IdAndSplitVal>{}, ad_utility::HashMap<std::decay_t<Args>, Id>{}...};
+  };
+  return std::apply(inner, RdfsVocabulary::AdditionalValuesTuple{});
+};
+
+inline auto createVectorTupleDummy = []() {
+  auto inner = []<typename... Args>(const Args&&...) {
+    return std::tuple{std::vector<std::pair<std::string, IdAndSplitVal>>{}, std::vector<std::pair<std::decay_t<Args>, Id>>{}...};
+  };
+  return std::apply(inner, RdfsVocabulary::AdditionalValuesTuple{});
+};
+
+using ItemMap = std::invoke_result_t<decltype(createHashMapTupleDummy)>;
+
 using ItemMapArray = std::array<ItemMap, NUM_PARALLEL_ITEM_MAPS>;
-using ItemVec = std::vector<std::pair<std::string, IdAndSplitVal>>;
+using ItemVec = std::invoke_result_t<decltype(createVectorTupleDummy)>;
 
 /**
  * Manage a HashMap of string->Id to create unique Ids for strings.
@@ -45,22 +111,58 @@ struct ItemMapManager {
   /// If the key was seen before, return its preassigned Id. Else assign the
   /// Next free Id to the string, store and return it.
   Id assignNextId(const string& key) {
-    if (!_map.count(key)) {
-      Id res = _map.size() + _minId;
-      _map[key] = {res, m_comp->extractAndTransformComparable(
+    auto& map = std::get<0>(_map);
+    if (!map.count(key)) {
+      Id res = _nextId++;
+      map[key] = {res, m_comp->extractAndTransformComparable(
                             key, TripleComponentComparator::Level::IDENTICAL)};
       return res;
     } else {
-      return _map[key].m_id;
+      return map[key].m_id;
     }
+  }
+
+  template<typename T>
+  static constexpr bool alwaysFalse = false;
+
+  template <size_t i, typename T>
+  Id assignNextIdImpl (const T& key){
+    auto& map = std::get<i>(_map);
+    using Key = typename std::decay_t<decltype(map)>::key_type;
+    if constexpr (std::is_same_v<Key, T>) {
+      if (!map.count(key)) {
+        Id res = _nextId++;
+        map[key] = res;
+        return res;
+      } else {
+        return map[key];
+      }
+    }
+    else {
+      return assignNextIdImpl<i+1>(key);
+    }
+  };
+
+  template <typename T> requires (RdfsVocabulary::isAdditionalType<T>)
+  Id assignNextId(const T& key) {
+    return assignNextIdImpl<1>(key);
   }
 
   /// call assignNextId for each of the Triple elements.
   std::array<Id, 3> assignNextId(const Triple& t) {
     return {assignNextId(t[0]), assignNextId(t[1]), assignNextId(t[2])};
   }
+
+  /// call assignNextId for each of the Triple elements.
+  std::array<Id, 3> assignNextId(const TransformedTriple& t) {
+    auto assign = [&](const auto& el) {return assignNextId(el);};
+    return {assignNextId(t._subject), assignNextId(t._predicate), std::visit(assign, t._object)};
+  }
+
+
   ItemMap _map;
   Id _minId = 0;
+  Id _nextId = _minId;
   const TripleComponentComparator* m_comp = nullptr;
 };
 
@@ -68,7 +170,7 @@ struct ItemMapManager {
 /// language tag of its object.
 struct LangtagAndTriple {
   std::string _langtag;
-  Triple _triple;
+  TransformedTriple _triple;
 };
 
 /**
@@ -135,7 +237,7 @@ auto getIdMapLambdas(std::array<ItemMapManager, Parallelism>* itemArrayPtr,
         // get the Id for the tagged predicate, e.g. @en@rdfs:label
         auto langTaggedPredId =
             map.assignNextId(ad_utility::convertToLanguageTaggedPredicate(
-                lt._triple[1], lt._langtag));
+                lt._triple._predicate, lt._langtag));
         auto& spoIds = *(res[0]);  // ids of original triple
         // extra triple <subject> @language@<predicate> <object>
         res[1].emplace(array<Id, 3>{spoIds[0], langTaggedPredId, spoIds[2]});

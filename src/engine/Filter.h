@@ -22,7 +22,7 @@ class Filter : public Operation {
   Filter(QueryExecutionContext* qec,
          std::shared_ptr<QueryExecutionTree> subtree,
          SparqlFilter::FilterType type, string lhs, string rhs,
-         vector<string> additionalLhs, vector<string> additionalPrefixes);
+         vector<string> additionalLhs, vector<string> additionalPrefixes, std::optional<ad_geo::Rectangle> boundingBox = std::nullopt);
 
   virtual string asString(size_t indent = 0) const override;
 
@@ -79,6 +79,16 @@ class Filter : public Operation {
     if (_type == SparqlFilter::FilterType::REGEX) {
       return std::numeric_limits<Id>::max();
     }
+
+    if (_type == SparqlFilter::BOUNDING_BOX_CONTAINS) {
+      if (isLhsSorted()) {
+        // This is still linear, but typically cheaper b.c. of Cache-Locality
+        return RuntimeParameters().get<"bounding_box_filter_sorted_cost_estimate">() * _subtree->getSizeEstimate() + getSizeEstimate() + _subtree->getCostEstimate();
+      } else {
+        return RuntimeParameters().get<"bounding_box_filter_unsorted_cost_estimate">() * _subtree->getSizeEstimate() + getSizeEstimate() + _subtree->getCostEstimate() ;
+      }
+
+    }
     if (isLhsSorted()) {
       // we can apply the very cheap binary sort filter
       return getSizeEstimate() + _subtree->getCostEstimate();
@@ -114,6 +124,7 @@ class Filter : public Operation {
   SparqlFilter::FilterType _type;
   string _lhs;
   string _rhs;
+  std::optional<ad_geo::Rectangle> _boundingBox;
 
   std::vector<string> _additionalLhs;
   std::vector<string> _additionalPrefixRegexes;
@@ -164,6 +175,11 @@ class Filter : public Operation {
       ResultTable* result,
       const std::shared_ptr<const ResultTable> subRes) const;
   virtual void computeResult(ResultTable* result) override;
+
+  template <int WIDTH>
+  void computeResultBoundingBox(
+      ResultTable* result,
+      const std::shared_ptr<const ResultTable> subRes) const;
 
   /**
    * @brief This struct handles the extraction of the data from an id based upon

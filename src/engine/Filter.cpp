@@ -19,16 +19,18 @@ size_t Filter::getResultWidth() const { return _subtree->getResultWidth(); }
 Filter::Filter(QueryExecutionContext* qec,
                std::shared_ptr<QueryExecutionTree> subtree,
                SparqlFilter::FilterType type, string lhs, string rhs,
-               vector<string> additionalLhs, vector<string> additionalPrefixes)
+               vector<string> additionalLhs, vector<string> additionalPrefixes, std::optional<ad_geo::Rectangle> boundingBox)
     : Operation(qec),
       _subtree(std::move(subtree)),
       _type(type),
       _lhs(std::move(lhs)),
       _rhs(std::move(rhs)),
+      _boundingBox{std::move(boundingBox)},
       _additionalLhs(std::move(additionalLhs)),
       _additionalPrefixRegexes(std::move(additionalPrefixes)),
       _regexIgnoreCase(false),
-      _lhsAsString(false) {
+      _lhsAsString(false)
+{
   AD_CHECK(_additionalPrefixRegexes.empty() || _type == SparqlFilter::PREFIX);
   AD_CHECK(_additionalLhs.size() == _additionalPrefixRegexes.size());
   // TODO<joka921> Make the _additionalRegexes and _additionalLhs a pair to
@@ -74,6 +76,9 @@ string Filter::asString(size_t indent) const {
       break;
     case SparqlFilter::PREFIX:
       os << " PREFIX ";
+      break;
+    case SparqlFilter::BOUNDING_BOX_CONTAINS:
+      os << " CONTAINED ";
       break;
   }
   if (_lhsAsString) {
@@ -122,6 +127,8 @@ string Filter::getDescriptor() const {
     case SparqlFilter::PREFIX:
       os << " PREFIX ";
       break;
+    case SparqlFilter::BOUNDING_BOX_CONTAINS:
+      os << " CONTAINED ";
   }
   os << _rhs;
   for (size_t i = 0; i < _additionalLhs.size(); ++i) {
@@ -252,7 +259,10 @@ void Filter::computeResult(ResultTable* result) {
   result->_localVocab = subRes->_localVocab;
   size_t lhsInd = _subtree->getVariableColumn(_lhs);
   int width = result->_data.cols();
-  if (_rhs[0] == '?') {
+
+  if (_type == SparqlFilter::BOUNDING_BOX_CONTAINS)  {
+    CALL_FIXED_SIZE_1(width, computeResultBoundingBox, result, subRes);
+  } else if (_rhs[0] == '?') {
     size_t rhsInd = _subtree->getVariableColumn(_rhs);
     CALL_FIXED_SIZE_1(width, computeResultDynamicValue, &result->_data, lhsInd,
                       rhsInd, subRes->_data, subRes->getResultType(lhsInd));
@@ -639,12 +649,13 @@ void Filter::computeResultFixedValue(
   bool range_filter_inverse = false;
   switch (subRes->getResultType(lhs)) {
     case ResultTable::ResultType::KB: {
-      std::string rhs_string = _rhs;
-      if (ad_utility::isXsdValue(rhs_string)) {
-        rhs_string = ad_utility::convertValueLiteralToIndexWord(rhs_string);
+      std::variant<string, float, ad_geo::Rectangle> rhs_actual = _rhs;
+      if (ad_utility::isXsdValue(_rhs)) {
+        rhs_actual = ad_utility::convertValueLiteralToIndexWord(_rhs);
       } else if (ad_utility::isNumeric(_rhs)) {
-        rhs_string = ad_utility::convertNumericToIndexWord(rhs_string);
+        rhs_actual = ad_utility::convertNumericToIndexWord(_rhs);
       } else {
+        auto& rhs_string = std::get<string>(rhs_actual);
         // TODO: This is not standard conform, but currently required due to
         // our vocabulary storing iris with the greater than and
         // literals with their quotation marks.
@@ -659,23 +670,26 @@ void Filter::computeResultFixedValue(
         }
       }
 
-      // TODO<joka921> which level do we want for these filters
-      auto level = TripleComponentComparator::Level::QUARTERNARY;
-      if (_type == SparqlFilter::EQ || _type == SparqlFilter::NE) {
-        rhs = getIndex().getVocab().lower_bound(rhs_string, level);
-        rhs_upper_for_range =
-            getIndex().getVocab().upper_bound(rhs_string, level);
-        apply_range_filter = true;
-        range_filter_inverse = _type == SparqlFilter::NE;
-      } else if (_type == SparqlFilter::GE) {
-        rhs = getIndex().getVocab().getValueIdForGE(rhs_string, level);
-      } else if (_type == SparqlFilter::GT) {
-        rhs = getIndex().getVocab().getValueIdForGT(rhs_string, level);
-      } else if (_type == SparqlFilter::LT) {
-        rhs = getIndex().getVocab().getValueIdForLT(rhs_string, level);
-      } else if (_type == SparqlFilter::LE) {
-        rhs = getIndex().getVocab().getValueIdForLE(rhs_string, level);
-      }
+      auto getIdLambda = [&](const auto& rhs_string) {
+            // TODO<joka921> which level do we want for these filters
+            auto level = TripleComponentComparator::Level::QUARTERNARY;
+            if (_type == SparqlFilter::EQ || _type == SparqlFilter::NE) {
+              rhs = getIndex().getVocab().lower_bound(rhs_string, level);
+              rhs_upper_for_range =
+                  getIndex().getVocab().upper_bound(rhs_string, level);
+              apply_range_filter = true;
+              range_filter_inverse = _type == SparqlFilter::NE;
+            } else if (_type == SparqlFilter::GE) {
+              rhs = getIndex().getVocab().getValueIdForGE(rhs_string, level);
+            } else if (_type == SparqlFilter::GT) {
+              rhs = getIndex().getVocab().getValueIdForGT(rhs_string, level);
+            } else if (_type == SparqlFilter::LT) {
+              rhs = getIndex().getVocab().getValueIdForLT(rhs_string, level);
+            } else if (_type == SparqlFilter::LE) {
+              rhs = getIndex().getVocab().getValueIdForLE(rhs_string, level);
+            }
+          };
+      std::visit(getIdLambda, rhs_actual);
       // All other types of filters do not use r and work on _rhs directly
       break;
     }
@@ -789,6 +803,68 @@ void Filter::computeResultFixedValue(
                 std::to_string(static_cast<int>(subRes->getResultType(lhs))));
         break;
     }
+  }
+  LOG(DEBUG) << "Filter result computation done." << endl;
+  resultTable->_data = result.moveToDynamic();
+}
+
+// _____________________________________________________________________________
+template <int WIDTH>
+void Filter::computeResultBoundingBox(ResultTable* resultTable, const std::shared_ptr<const ResultTable> subRes) const {
+  LOG(DEBUG) << "Filter result computation..." << endl;
+  IdTableStatic<WIDTH> result = resultTable->_data.moveToStatic<WIDTH>();
+  const IdTableView<WIDTH> input = subRes->_data.asStaticView<WIDTH>();
+
+  // interpret the filters right hand side
+  const size_t lhs = _subtree->getVariableColumn(_lhs);
+  if (subRes->getResultType(lhs) != ResultTable::ResultType::KB) {
+    AD_THROW(ad_semsearch::Exception::BAD_QUERY,
+             "The bounding box filter is only allowed on variables from the knowledge base (no aggregate results etc)");
+  }
+  AD_CHECK(_boundingBox);
+
+  size_t numResultsTotal = 0;
+  std::vector<bool> matches (input.size(), false);
+  const auto inputSize = input.size();
+
+  const auto boundingBox = *_boundingBox;
+
+  const auto& vocab = getIndex().getVocab();
+
+  auto smallerEqualBoundingBox = ad_geo::getLowerBoundRectangle(boundingBox);
+
+  auto idLowerBound = vocab.lower_bound(smallerEqualBoundingBox);
+  auto greaterBoundingBox = ad_geo::getUpperBoundRectangle(boundingBox);
+  auto idGreater = vocab.lower_bound(greaterBoundingBox);
+
+  auto startIterator = input.begin();
+  auto endIterator = input.end();
+
+  if (isLhsSorted()) {
+    startIterator = std::lower_bound(input.begin(), input.end(), idLowerBound, [lhs](const auto& el, const auto& x) {return el[lhs] < x;});
+    endIterator = std::lower_bound(input.begin(), input.end(), idGreater, [lhs] (const auto& el, const auto& x) {return x < el[lhs];});
+  }
+
+  auto performFilter = [&]<typename T> (T) {
+        for (; startIterator < endIterator; ++startIterator) {
+          const auto& el = *startIterator;
+          Id id = el[lhs];
+          if constexpr( !T::value) {
+            if (id < idLowerBound || id >= idGreater) {
+              continue;
+            }
+          }
+          auto optRectangle = getIndex().getVocab().idToRectangle(el[lhs]);
+          if (optRectangle && _boundingBox->contains(*optRectangle)) {
+            result.push_back(el);
+          }
+        }
+      };
+
+  if (isLhsSorted()) {
+    performFilter(std::true_type{});
+  } else {
+    performFilter(std::false_type{});
   }
   LOG(DEBUG) << "Filter result computation done." << endl;
   resultTable->_data = result.moveToDynamic();

@@ -7,10 +7,11 @@
 #include <algorithm>
 #include <fstream>
 
-#include "../parser/RdfEscaping.h"
 #include "../parser/Tokenizer.h"
 #include "../util/Exception.h"
 #include "../util/Log.h"
+#include "../util/Serializer/FileSerializer.h"
+#include "../util/Serializer/SerializeString.h"
 #include "../util/StringUtils.h"
 
 using std::string;
@@ -163,18 +164,18 @@ void TreeNode::penaltize() {
 std::vector<string> calculatePrefixes(const string& filename,
                                       size_t numPrefixes, size_t codelength,
                                       bool alwaysAddCode) {
-  std::ifstream ifs(filename);
-  AD_CHECK(ifs.is_open());
+  ad_utility::serialization::FileReadSerializer ifs(filename);
 
   size_t MinPrefixLength = alwaysAddCode ? 1 : codelength + 1;
   size_t actualCodeLength = alwaysAddCode ? 0 : codelength;
   string lastWord;
 
-  if (!std::getline(ifs, lastWord)) {
+  try {
+    ifs & lastWord;
+  } catch (...) {
     // file is empty
     return {};
   }
-
   size_t totalChars = lastWord.size();
   ad_utility::Tree t;
   ad_utility::TreeNode* lastPos{nullptr};
@@ -184,8 +185,12 @@ std::vector<string> calculatePrefixes(const string& filename,
 
   LOG(INFO) << "start reading words and building prefix tree..." << std::endl;
   // insert all prefix candidates into  the tree
-  while (std::getline(ifs, nextWord)) {
-    nextWord = RdfEscaping::unescapeNewlinesAndBackslashes(nextWord);
+  while (true) {
+    try {
+      ifs & nextWord;
+    } catch(...) {
+      break;
+    }
     totalChars += nextWord.size();
     // the longest common prefixes between two adjacent words are our candidates
     // for compression
