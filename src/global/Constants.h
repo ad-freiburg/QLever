@@ -121,9 +121,9 @@ static constexpr size_t PERCENTAGE_OF_TRIPLES_FOR_SORT_ESTIMATE = 5;
 
 #ifdef _PARALLEL_SORT
 static constexpr bool USE_PARALLEL_SORT = true;
-#include <parallel/algorithm>
-#include <execution>
 #include <algorithm>
+#include <execution>
+#include <parallel/algorithm>
 namespace ad_utility {
 template <typename... Args>
 auto parallel_sort(Args&&... args) {
@@ -132,7 +132,7 @@ auto parallel_sort(Args&&... args) {
 using parallel_tag = __gnu_parallel::parallel_tag;
 
 template <typename... Args>
-void parallel_stl_sort(Args&&...args) {
+void parallel_stl_sort(Args&&... args) {
   std::sort(std::execution::par_unseq, std::forward<Args>(args)...);
 }
 
