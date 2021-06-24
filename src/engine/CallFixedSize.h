@@ -37,8 +37,8 @@
     func<8>(__VA_ARGS__);               \
   } else if (i == 9) {                  \
     func<9>(__VA_ARGS__);               \
-  } else if (i == 10) {                  \
-    func<10>(__VA_ARGS__);               \
+  } else if (i == 10) {                 \
+    func<10>(__VA_ARGS__);              \
   } else {                              \
     func<0>(__VA_ARGS__);               \
   }
