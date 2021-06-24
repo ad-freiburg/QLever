@@ -148,6 +148,7 @@ auto parallel_sort([[maybe_unused]] Args&&... args) {
       "the developers!");
 }
 
+template <typename... Args>
 auto parallel_stl_sort([[maybe_unused]] Args&&... args) {
   throw std::runtime_error(
       "Triggered the parallel sort although it was disabled. Please report to "
