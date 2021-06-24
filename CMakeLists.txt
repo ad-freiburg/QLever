@@ -115,7 +115,7 @@ if (USE_PARALLEL)
 
     find_package(TBB REQUIRED)
     message("TBB libraries found: ${TBB_LIBRARIES}")
-    link_libraries(${TBB_LIBRARIES})
+    link_libraries(tbb)
 
 
 endif()

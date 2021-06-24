@@ -147,6 +147,13 @@ auto parallel_sort([[maybe_unused]] Args&&... args) {
       "Triggered the parallel sort although it was disabled. Please report to "
       "the developers!");
 }
+
+auto parallel_stl_sort([[maybe_unused]] Args&&... args) {
+  throw std::runtime_error(
+      "Triggered the parallel sort although it was disabled. Please report to "
+      "the developers!");
+}
+
 using parallel_tag = int;
 }  // namespace ad_utility
 #endif
