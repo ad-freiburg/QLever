@@ -2,29 +2,29 @@ cmake_minimum_required(VERSION 2.8.4)
 project(QLever C CXX)
 
 # C/C++ Versions
-set (CMAKE_C_STANDARD 11)
-set (CMAKE_C_STANDARD_REQUIRED ON)
-set (CMAKE_CXX_STANDARD 17)
-set (CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Check compiler versions:
 if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-  # Check version. If empty, warn. If too old, error out:
-  if ("${CMAKE_CXX_COMPILER_VERSION}" STREQUAL "")
-    message(WARNING "GCC Compiler version is unknown, proceed at your own risk!")
-  elseif (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4.8)
-    message(FATAL_ERROR "GCC compiler version must be at least 4.8!")
-  endif()
-endif()
+    # Check version. If empty, warn. If too old, error out:
+    if ("${CMAKE_CXX_COMPILER_VERSION}" STREQUAL "")
+        message(WARNING "GCC Compiler version is unknown, proceed at your own risk!")
+    elseif (CMAKE_CXX_COMPILER_VERSION VERSION_LESS 4.8)
+        message(FATAL_ERROR "GCC compiler version must be at least 4.8!")
+    endif ()
+endif ()
 
 ## Build targets for address sanitizer
 # AddressSanitize
 set(CMAKE_C_FLAGS_ASAN
-        "-fsanitize=address -fno-optimize-sibling-calls -fsanitize-address-use-after-scope -fno-omit-frame-pointer -g -O1"
+        "-fsanitize=address -fsanitize=undefined -fno-optimize-sibling-calls -fsanitize-address-use-after-scope -fno-omit-frame-pointer -g -O1"
         CACHE STRING "Flags used by the C compiler during AddressSanitizer builds."
         FORCE)
 set(CMAKE_CXX_FLAGS_ASAN
-        "-fsanitize=address -fno-optimize-sibling-calls -fsanitize-address-use-after-scope -fno-omit-frame-pointer -g -O1"
+        "-fsanitize=address -fsanitize=undefined -fno-optimize-sibling-calls -fsanitize-address-use-after-scope -fno-omit-frame-pointer -g -O1"
         CACHE STRING "Flags used by the C++ compiler during AddressSanitizer builds."
         FORCE)
 
@@ -57,19 +57,24 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 # set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}  -Wall -Wextra -Wno-missing-field-initializers -DGTEST_HAS_TR1_TUPLE=0 -DGTEST_USE_OWN_TR1_TUPLE=0")
+# Enable the specification of additional warnings manually from the commandline
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${ADDITIONAL_COMPILER_FLAGS}")
+
 
 if (${PERFTOOLS_PROFILER})
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -lprofiler")
     message(STATUS "Adding -lprofiler (make sure your have google-perftools installed.)")
-endif()
+endif ()
 
 if (${ALLOW_SHUTDOWN})
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DALLOW_SHUTDOWN")
     message(STATUS "Adding -DALLOW_SHUTDOWN")
-endif()
+endif ()
 
 
-set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -static-libgcc -static-libstdc++")
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3")
+
+
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
 set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG}")
 
@@ -100,12 +105,12 @@ include_directories(third_party/abseil-cpp/)
 
 if (USE_PARALLEL)
     include(FindOpenMP)
-    if(OPENMP_FOUND)
+    if (OPENMP_FOUND)
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
         set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS} -static-libgcc -static-libstdc++")
-    endif()
-    add_definitions("-D_PARALLEL_SORT")
+        add_definitions("-D_PARALLEL_SORT")
+    endif ()
 endif()
 
 if (USE_TREE_BASED_CACHE)
@@ -118,7 +123,9 @@ endif()
 # Disable GNU parallel as it prevents build on Ubuntu 14.04
 set(USE_GNU_PARALLEL OFF CACHE BOOL "Don't use gnu parallel" FORCE)
 set(USE_OPENMP OFF CACHE BOOL "Don't use OPENMP as default" FORCE)
+
 add_subdirectory(third_party/stxxl)
+
 # apply STXXL CXXFLAGS
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${STXXL_CXX_FLAGS}")
 include_directories(SYSTEM ${STXXL_INCLUDE_DIRS})

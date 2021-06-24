@@ -37,6 +37,10 @@ void Server::initialize(const string& ontologyBaseName, bool useText,
     _index.addTextFromOnDiskIndex();
   }
 
+  _sortPerformanceEstimator.computeEstimatesExpensively(
+      _allocator,
+      _index.getNofTriples() * PERCENTAGE_OF_TRIPLES_FOR_SORT_ESTIMATE / 100);
+
   // Init the server socket.
   bool ret = _serverSocket.create() && _serverSocket.bind(_port) &&
              _serverSocket.listen();
@@ -91,6 +95,8 @@ void Server::runAcceptLoop() {
 
 // _____________________________________________________________________________
 void Server::process(Socket* client) {
+  ad_utility::Timer requestTimer;
+  requestTimer.start();
   string contentType;
   LOG(DEBUG) << "Waiting for receive call to complete." << endl;
   string request;
@@ -157,7 +163,7 @@ void Server::process(Socket* client) {
       }
 
       if (ad_utility::getLowercase(params["cmd"]) == "clearcache") {
-        _cache.clear();
+        _cache.clearUnpinnedOnly();
       }
 
       if (ad_utility::getLowercase(params["cmd"]) == "clearcachecomplete") {
@@ -165,6 +171,16 @@ void Server::process(Socket* client) {
         _cache.clearAll();
         lock->clear();
       }
+
+      ad_utility::SharedConcurrentTimeoutTimer timeoutTimer =
+          std::make_shared<ad_utility::ConcurrentTimeoutTimer>(
+              ad_utility::TimeoutTimer::unlimited());
+      if (params.contains("timeout")) {
+        timeoutTimer = std::make_shared<ad_utility::ConcurrentTimeoutTimer>(
+            ad_utility::TimeoutTimer::fromSeconds(
+                atof(params["timeout"].c_str())));
+      }
+
       auto it = params.find("send");
       size_t maxSend = MAX_NOF_ROWS_IN_RESULT;
       if (it != params.end()) {
@@ -190,11 +206,17 @@ void Server::process(Socket* client) {
       pq.expandPrefixes();
 
       QueryExecutionContext qec(_index, _engine, &_cache, &_pinnedSizes,
+                                _allocator, _sortPerformanceEstimator,
                                 pinSubtrees, pinResult);
+      // start the shared timeout timer here to also include
+      // the query planning
+      timeoutTimer->wlock()->start();
+
       QueryPlanner qp(&qec);
       qp.setEnablePatternTrick(_enablePatternTrick);
       QueryExecutionTree qet = qp.createExecutionTree(pq);
       qet.isRoot() = true;  // allow pinning of the final result
+      qet.recursivelySetTimeoutTimer(timeoutTimer);
       LOG(TRACE) << qet.asString() << std::endl;
 
       if (ad_utility::getLowercase(params["action"]) == "csv_export") {
@@ -211,16 +233,14 @@ void Server::process(Socket* client) {
             "Content-Disposition: attachment;filename=export.tsv";
       } else {
         // Normal case: JSON response
-        response = composeResponseJson(pq, qet, maxSend);
+        response = composeResponseJson(pq, qet, requestTimer, maxSend);
         contentType = "application/json";
       }
       // Print the runtime info. This needs to be done after the query
       // was computed.
       LOG(INFO) << '\n' << qet.getRootOperation()->getRuntimeInfo().toString();
-    } catch (const ad_semsearch::Exception& e) {
-      response = composeResponseJson(query, e);
     } catch (const std::exception& e) {
-      response = composeResponseJson(query, &e);
+      response = composeResponseJson(query, e, requestTimer);
     }
     string httpResponse = createHttpResponse(response, contentType);
     auto bytesSent = client->send(httpResponse);
@@ -238,7 +258,6 @@ Server::ParamValueMap Server::parseHttpRequest(
     const string& httpRequest) const {
   LOG(DEBUG) << "Parsing HTTP Request." << endl;
   ParamValueMap params;
-  _requestProcessingTimer.start();
   // Parse the HTTP Request.
 
   size_t indexOfGET = httpRequest.find("GET");
@@ -349,12 +368,11 @@ string Server::create400HttpResponse() const {
 // _____________________________________________________________________________
 string Server::composeResponseJson(const ParsedQuery& query,
                                    const QueryExecutionTree& qet,
+                                   ad_utility::Timer& requestTimer,
                                    size_t maxSend) const {
-  // TODO(schnelle) we really should use a json library
-  // such as https://github.com/nlohmann/json
   shared_ptr<const ResultTable> rt = qet.getResult();
-  _requestProcessingTimer.stop();
-  off_t compResultUsecs = _requestProcessingTimer.usecs();
+  requestTimer.stop();
+  off_t compResultUsecs = requestTimer.usecs();
   size_t resultSize = rt->size();
 
   nlohmann::json j;
@@ -377,14 +395,14 @@ string Server::composeResponseJson(const ParsedQuery& query,
     if (query._offset.size() > 0) {
       offset = static_cast<size_t>(atol(query._offset.c_str()));
     }
-    _requestProcessingTimer.cont();
+    requestTimer.cont();
     j["res"] = qet.writeResultAsJson(query._selectedVariables,
                                      std::min(limit, maxSend), offset);
-    _requestProcessingTimer.stop();
+    requestTimer.stop();
   }
 
-  j["time"]["total"] =
-      std::to_string(_requestProcessingTimer.usecs() / 1000.0) + "ms";
+  requestTimer.stop();
+  j["time"]["total"] = std::to_string(requestTimer.usecs() / 1000.0) + "ms";
   j["time"]["computeResult"] = std::to_string(compResultUsecs / 1000.0) + "ms";
 
   return j.dump(4);
@@ -409,50 +427,20 @@ string Server::composeResponseSepValues(const ParsedQuery& query,
 }
 
 // _____________________________________________________________________________
-string Server::composeResponseJson(
-    const string& query, const ad_semsearch::Exception& exception) const {
-  std::ostringstream os;
-  _requestProcessingTimer.stop();
-
-  os << "{\n"
-     << "\"query\": " << ad_utility::toJson(query) << ",\n"
-     << "\"status\": \"ERROR\",\n"
-     << "\"resultsize\": \"0\",\n"
-     << "\"time\": {\n"
-     << "\"total\": \"" << _requestProcessingTimer.msecs() / 1000.0 << "ms\",\n"
-     << "\"computeResult\": \"" << _requestProcessingTimer.msecs() / 1000.0
-     << "ms\"\n"
-     << "},\n";
-
-  string msg = ad_utility::toJson(exception.getFullErrorMessage());
-
-  os << "\"exception\": " << msg << "\n"
-     << "}\n";
-
-  return os.str();
-}
-
-// _____________________________________________________________________________
 string Server::composeResponseJson(const string& query,
-                                   const std::exception* exception) const {
+                                   const std::exception& exception,
+                                   ad_utility::Timer& requestTimer) const {
   std::ostringstream os;
-  _requestProcessingTimer.stop();
+  requestTimer.stop();
 
-  os << "{\n"
-     << "\"query\": " << ad_utility::toJson(query) << ",\n"
-     << "\"status\": \"ERROR\",\n"
-     << "\"resultsize\": \"0\",\n"
-     << "\"time\": {\n"
-     << "\"total\": \"" << _requestProcessingTimer.msecs() << "ms\",\n"
-     << "\"computeResult\": \"" << _requestProcessingTimer.msecs() << "ms\"\n"
-     << "},\n";
-
-  string msg = ad_utility::toJson(exception->what());
-
-  os << "\"exception\": " << msg << "\n"
-     << "}\n";
-
-  return os.str();
+  json j;
+  j["query"] = query;
+  j["status"] = "ERROR";
+  j["resultsize"] = 0;
+  j["time"]["total"] = requestTimer.msecs();
+  j["time"]["computeResult"] = requestTimer.msecs();
+  j["exception"] = exception.what();
+  return j.dump(4);
 }
 
 // _____________________________________________________________________________
@@ -521,9 +509,9 @@ string Server::composeStatsJson() const {
 // _______________________________________
 nlohmann::json Server::composeCacheStatsJson() const {
   nlohmann::json result;
-  result["num-cached-elements"] = _cache.numCachedElements();
-  result["num-pinned-elements"] = _cache.numPinnedElements();
-  result["cached-size"] = _cache.cachedSize();
+  result["num-non-pinned-entries"] = _cache.numNonPinnedEntries();
+  result["num-pinned-entries"] = _cache.numPinnedEntries();
+  result["non-pinned-size"] = _cache.nonPinnedSize();
   result["pinned-size"] = _cache.pinnedSize();
   result["num-pinned-index-scan-sizes"] = _pinnedSizes.rlock()->size();
   return result;

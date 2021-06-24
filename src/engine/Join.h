@@ -18,6 +18,13 @@ class Join : public Operation {
        std::shared_ptr<QueryExecutionTree> t2, size_t t1JoinCol,
        size_t t2JoinCol, bool keepJoinColumn = true);
 
+  // A very explicit constructor, which initializes an invalid join object (it
+  // has no subtrees, which violates class invariants). These invalid Join
+  // objects can be used for unit tests that only test member functions which
+  // don't access the subtrees.
+  struct InvalidOnlyForTestingJoinTag {};
+  explicit Join(InvalidOnlyForTestingJoinTag) {}
+
   virtual string asString(size_t indent = 0) const override;
 
   virtual string getDescriptor() const override;
@@ -26,7 +33,7 @@ class Join : public Operation {
 
   virtual vector<size_t> resultSortedOn() const override;
 
-  ad_utility::HashMap<string, size_t> getVariableColumns() const;
+  ad_utility::HashMap<string, size_t> getVariableColumns() const override;
 
   std::unordered_set<string> getContextVars() const;
 
@@ -63,8 +70,8 @@ class Join : public Operation {
    * the result in dynRes. Creates a cross product for matching rows
    **/
   template <int L_WIDTH, int R_WIDTH, int OUT_WIDTH>
-  static void join(const IdTable& dynA, size_t jc1, const IdTable& dynB,
-                   size_t jc2, IdTable* dynRes);
+  void join(const IdTable& dynA, size_t jc1, const IdTable& dynB, size_t jc2,
+            IdTable* dynRes);
 
   class RightLargerTag {};
   class LeftLargerTag {};

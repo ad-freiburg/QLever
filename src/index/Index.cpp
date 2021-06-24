@@ -97,6 +97,7 @@ void Index::createFromFile(const string& filename) {
   string vocabFile = _onDiskBase + ".vocabulary";
   string vocabFileTmp = _onDiskBase + ".vocabularyTmp";
   std::vector<string> prefixes;
+  LOG(INFO) << "Finished writing permutations" << std::endl;
   if (_vocabPrefixCompressed) {
     // we have to use the "normally" sorted vocabulary for the prefix
     // compression;
@@ -107,7 +108,7 @@ void Index::createFromFile(const string& filename) {
     std::ofstream prefixFile(_onDiskBase + PREFIX_FILE);
     AD_CHECK(prefixFile.is_open());
     for (const auto& prefix : prefixes) {
-      prefixFile << prefix << '\n';
+      prefixFile << prefix << std::endl;
     }
   }
   _configurationJson["prefixes"] = _vocabPrefixCompressed;
@@ -118,7 +119,7 @@ void Index::createFromFile(const string& filename) {
   if (std::rename(vocabFileTmp.c_str(), vocabFile.c_str())) {
     LOG(INFO) << "Error: Rename the prefixed vocab file " << vocabFileTmp
               << " to " << vocabFile << " set errno to " << errno
-              << ". Terminating...\n";
+              << ". Terminating..." << std::endl;
     AD_CHECK(false);
   }
   writeConfiguration();
@@ -163,7 +164,7 @@ VocabularyData Index::passFileForVocabulary(const string& filename,
       auto p = ad_pipeline::setupParallelPipeline<1, NUM_PARALLEL_ITEM_MAPS>(
           _parserBatchSize,
           // when called, returns an optional to the next triple. If
-          // <linexPerPartial> triples were parsed, return std::nullopt. when
+          // `linesPerPartial` triples were parsed, return std::nullopt. when
           // the parser is unable to deliver triples, set parserExhausted to
           // true and return std::nullopt. this is exactly the behavior we need,
           // as a first step in the parallel Pipeline.
@@ -433,7 +434,7 @@ Index::createPermutationPairImpl(const string& fileName1,
 
   out1.close();
   out2.close();
-  LOG(INFO) << "Permutation done.\n";
+  LOG(INFO) << "Permutation done." << std::endl;
   return std::make_pair(std::move(metaData1), std::move(metaData2));
 }
 
@@ -493,12 +494,12 @@ void Index::createPermutationPair(
                            &(metaData.value().second));
     LOG(INFO) << "Done" << '\n';
     LOG(INFO) << "Writing MetaData for " << p1._readableName << " and "
-              << p2._readableName << '\n';
+              << p2._readableName << std::endl;
     ad_utility::File f1(_onDiskBase + ".index" + p1._fileSuffix, "r+");
     metaData.value().first.appendToFile(&f1);
     ad_utility::File f2(_onDiskBase + ".index" + p2._fileSuffix, "r+");
     metaData.value().second.appendToFile(&f2);
-    LOG(INFO) << "Done" << '\n';
+    LOG(INFO) << "Done" << std::endl;
   }
 }
 
@@ -564,7 +565,7 @@ void Index::createPatternsImpl(const string& fileName,
                                const Id langPredUpperBound,
                                const Args&... vecReaderArgs) {
   IndexMetaDataHmap meta;
-  typedef std::unordered_map<Pattern, size_t> PatternsCountMap;
+  using PatternsCountMap = ad_utility::HashMap<Pattern, size_t>;
 
   LOG(INFO) << "Creating patterns file..." << std::endl;
   VecReaderType reader(vecReaderArgs...);
@@ -577,7 +578,6 @@ void Index::createPatternsImpl(const string& fileName,
   // determine the most common patterns
   Pattern pattern;
 
-  size_t patternIndex = 0;
   size_t numValidPatterns = 0;
   Id currentSubj = (*reader)[0];
 
@@ -586,32 +586,19 @@ void Index::createPatternsImpl(const string& fileName,
     if (triple[0] != currentSubj) {
       currentSubj = triple[0];
       numValidPatterns++;
-      auto it = patternCounts.find(pattern);
-      if (it == patternCounts.end()) {
-        patternCounts.insert(std::pair<Pattern, size_t>(pattern, size_t(1)));
-      } else {
-        (*it).second++;
-      }
+      patternCounts[pattern]++;
       pattern.clear();
-      patternIndex = 0;
     }
-
     // don't list predicates twice
-    if (patternIndex == 0 || pattern[patternIndex - 1] != triple[1]) {
+    if (pattern.empty() || pattern.back() != triple[1]) {
       // Ignore @..@ type language predicates
       if (triple[1] < langPredLowerBound || triple[1] >= langPredUpperBound) {
         pattern.push_back(triple[1]);
-        patternIndex++;
       }
     }
   }
   // process the last entry
-  auto it = patternCounts.find(pattern);
-  if (it == patternCounts.end()) {
-    patternCounts.insert(std::pair<Pattern, size_t>(pattern, size_t(1)));
-  } else {
-    (*it).second++;
-  }
+  patternCounts[pattern]++;
   LOG(INFO) << "Counted patterns and found " << patternCounts.size()
             << " distinct patterns." << std::endl;
   LOG(INFO) << "Patterns were found for " << numValidPatterns << " entities."
@@ -706,7 +693,7 @@ void Index::createPatternsImpl(const string& fileName,
 
   pattern.clear();
   currentSubj = (*VecReaderType(vecReaderArgs...))[0];
-  patternIndex = 0;
+  size_t patternIndex = 0;
   // Create the has-relation and has-pattern predicates
   for (VecReaderType reader2(vecReaderArgs...); !reader2.empty(); ++reader2) {
     auto triple = *reader2;
@@ -1510,7 +1497,8 @@ void Index::initializeVocabularySettingsBuild() {
     } else {
       LOG(WARN) << "You specified the ascii-prefixes-only but a parser that is "
                    "not the Turtle stream parser. This means that this setting "
-                   "is ignored\n";
+                   "is ignored."
+                << std::endl;
     }
   }
 
@@ -1519,13 +1507,15 @@ void Index::initializeVocabularySettingsBuild() {
     LOG(INFO) << "Overriding setting num-triples-per-partial-vocab to "
               << _numTriplesPerPartialVocab
               << " This might influence performance / memory usage during "
-                 "index build\n";
+                 "index build."
+              << std::endl;
   }
 
   if (j.count("parser-batch-size")) {
     _parserBatchSize = j["parser-batch-size"];
     LOG(INFO) << "Overriding setting parser-batch-size to " << _parserBatchSize
-              << " This might influence performance during index build\n";
+              << " This might influence performance during index build."
+              << std::endl;
   }
 }
 

@@ -1,7 +1,10 @@
 # QLever
 
-[![Build
-Status](https://travis-ci.org/ad-freiburg/QLever.svg?branch=master)](https://travis-ci.org/ad-freiburg/QLever)
+
+[![Build Status via Docker](https://github.com/ad-freiburg/QLever/actions/workflows/docker.yml/badge.svg)](https://github.com/ad-freiburg/QLever/actions/workflows/docker.yml)
+[![Build Status via G++10/Clang++11](https://github.com/ad-freiburg/QLever/actions/workflows/cmake.yml/badge.svg)](https://github.com/ad-freiburg/QLever/actions/workflows/cmake.yml)
+
+
 
 QLever (pronounced "Clever") is an efficient SPARQL engine, which can handle very large dataset with tens of billions of triples on a standard PC or server.
 For example, QLever can index the complete Wikidata (18 billion triples) in less than 24 hours and execute typical queries in less than a second, using no more than 40 GB of RAM. QLever is also fast for queries that produce large or very large results (millions of rows per second).
@@ -22,7 +25,7 @@ If you use QLever in your work, please cite that paper.
 Much functionality has been added to QLever since then.
 In particular, the following standard SPARQL constructs are all supported in the meantime:
 LIMIT, OFFSET, ORDER BY, GROUP BY, HAVING, COUNT, SAMPLE, GROUP_CONCAT, FILTER, REGEX, LANG, OPTIONAL, UNION, MINUS, VALUES, BIND.
-Subqueries are also supported.
+Predicate paths and subqueries are also supported.
 The SERVICE keyword is not yet supported.
 We are currently working on several publications that describe and evaluate these extensions.
 

@@ -3,8 +3,11 @@
 // Author: Johannes Kalmbach(joka921) <johannes.kalmbach@gmail.com>
 //
 #include <gtest/gtest.h>
+
 #include <iostream>
 #include <string>
+
+#include "../src/parser/RdfEscaping.h"
 #include "../src/parser/Tokenizer.h"
 
 using std::string;
@@ -16,10 +19,10 @@ TEST(TokenTest, Numbers) {
   string integer3 = "+5425";
   string noInteger = "+54a";
 
-  string decimal1 = u8"-235632.23";
-  string decimal2 = u8"+23832.23";
-  string decimal3 = u8"32.3";
-  string noDecimal = u8"-23.";
+  string decimal1 = "-235632.23";
+  string decimal2 = "+23832.23";
+  string decimal3 = "32.3";
+  string noDecimal = "-23.";
 
   string double1 = "e+3";
   string double2 = "E-92";
@@ -76,21 +79,21 @@ static constexpr auto x = cls(TurtleTokenCtre::PnCharsBaseString);
 TEST(TokenizerTest, SingleChars) {
   TurtleToken t;
 
-  ASSERT_TRUE(RE2::FullMatch(u8"A", t.cls(t.PnCharsBaseString)));
-  ASSERT_TRUE(RE2::FullMatch(u8"\u00dd", t.cls(t.PnCharsBaseString)));
-  ASSERT_TRUE(RE2::FullMatch(u8"\u00DD", t.cls(t.PnCharsBaseString)));
-  ASSERT_TRUE(RE2::FullMatch(u8"\u00De", t.cls(t.PnCharsBaseString)));
-  ASSERT_FALSE(RE2::FullMatch(u8"\u00D7", t.cls(t.PnCharsBaseString)));
+  ASSERT_TRUE(RE2::FullMatch("A", t.cls(t.PnCharsBaseString)));
+  ASSERT_TRUE(RE2::FullMatch("\u00dd", t.cls(t.PnCharsBaseString)));
+  ASSERT_TRUE(RE2::FullMatch("\u00DD", t.cls(t.PnCharsBaseString)));
+  ASSERT_TRUE(RE2::FullMatch("\u00De", t.cls(t.PnCharsBaseString)));
+  ASSERT_FALSE(RE2::FullMatch("\u00D7", t.cls(t.PnCharsBaseString)));
 
   // same for ctre
   // TODO<joka921>: fix those regexes to the unicode stuff and test more
   // extensively
-  ASSERT_TRUE(ctre::match<x>(u8"A"));
+  ASSERT_TRUE(ctre::match<x>("A"));
   /*
-  ASSERT_TRUE(ctre::match<x>(u8"\u00dd"));
-  ASSERT_TRUE(ctre::match<x>(u8"\u00DD"));
-  ASSERT_TRUE(ctre::match<x>(u8"\u00De"));
-  ASSERT_FALSE(ctre::match<x>(u8"\u00D7"));
+  ASSERT_TRUE(ctre::match<x>("\u00dd"));
+  ASSERT_TRUE(ctre::match<x>("\u00DD"));
+  ASSERT_TRUE(ctre::match<x>("\u00De"));
+  ASSERT_FALSE(ctre::match<x>("\u00D7"));
    */
 }
 
@@ -98,8 +101,8 @@ TEST(TokenizerTest, StringLiterals) {
   TurtleToken t;
   string sQuote1 = "\"this is a quote \"";
   string sQuote2 =
-      u8"\"this is a quote \' $@#ä\u1234 \U000A1234 \\\\ \\n \"";  // $@#\u3344\U00FF00DD\"";
-  string sQuote3 = u8"\"\\uAB23SomeotherChars\"";
+      "\"this is a quote \' $@#ä\u1234 \U000A1234 \\\\ \\n \"";  // $@#\u3344\U00FF00DD\"";
+  string sQuote3 = "\"\\uAB23SomeotherChars\"";
   string NoSQuote1 = "\"illegalQuoteBecauseOfNewline\n\"";
   string NoSQuote2 = "\"illegalQuoteBecauseOfBackslash\\  \"";
 
@@ -118,8 +121,8 @@ TEST(TokenizerTest, StringLiterals) {
 
   string sSingleQuote1 = "\'this is a quote \'";
   string sSingleQuote2 =
-      u8"\'this is a quote \" $@#ä\u1234 \U000A1234 \\\\ \\n \'";
-  string sSingleQuote3 = u8"\'\\uAB23SomeotherChars\'";
+      "\'this is a quote \" $@#ä\u1234 \U000A1234 \\\\ \\n \'";
+  string sSingleQuote3 = "\'\\uAB23SomeotherChars\'";
   string NoSSingleQuote1 = "\'illegalQuoteBecauseOfNewline\n\'";
   string NoSSingleQuote2 = "\'illegalQuoteBecauseOfBackslash\\  \'";
 
@@ -138,12 +141,12 @@ TEST(TokenizerTest, StringLiterals) {
   ASSERT_FALSE(ctre::match<c::StringLiteralSingleQuoteString>(NoSQuote1));
   ASSERT_FALSE(ctre::match<c::StringLiteralSingleQuoteString>(NoSQuote2));
 
-  string sMultiline1 = u8"\"\"\"test\n\"\"\"";
+  string sMultiline1 = "\"\"\"test\n\"\"\"";
   string sMultiline2 =
       "\"\"\"MultilineString\' \'\'\'\n\\n\\u00FF\\U0001AB34\"  \"\" "
       "someMore\"\"\"";
-  string sNoMultiline1 = u8"\"\"\"\\autsch\"\"\"";
-  string sNoMultiline2 = u8"\"\"\"\"\"\"\"";
+  string sNoMultiline1 = "\"\"\"\\autsch\"\"\"";
+  string sNoMultiline2 = "\"\"\"\"\"\"\"";
   ASSERT_TRUE(RE2::FullMatch(sMultiline1, t.StringLiteralLongQuote, nullptr));
   ASSERT_TRUE(RE2::FullMatch(sMultiline2, t.StringLiteralLongQuote, nullptr));
   ASSERT_FALSE(
@@ -156,12 +159,12 @@ TEST(TokenizerTest, StringLiterals) {
   ASSERT_FALSE(ctre::match<c::StringLiteralLongQuoteString>(sNoMultiline1));
   ASSERT_FALSE(ctre::match<c::StringLiteralLongQuoteString>(sNoMultiline2));
 
-  string sSingleMultiline1 = u8"\'\'\'test\n\'\'\'";
+  string sSingleMultiline1 = "\'\'\'test\n\'\'\'";
   string sSingleMultiline2 =
       "\'\'\'MultilineString\" \"\"\"\n\\n\\u00FF\\U0001AB34\'  \'\' "
       "someMore\'\'\'";
-  string sSingleNoMultiline1 = u8"\'\'\'\\autsch\'\'\'";
-  string sSingleNoMultiline2 = u8"\'\'\'\'\'\'\'";
+  string sSingleNoMultiline1 = "\'\'\'\\autsch\'\'\'";
+  string sSingleNoMultiline2 = "\'\'\'\'\'\'\'";
   ASSERT_TRUE(RE2::FullMatch(sSingleMultiline1, t.StringLiteralLongSingleQuote,
                              nullptr));
   ASSERT_TRUE(RE2::FullMatch(sSingleMultiline2, t.StringLiteralLongSingleQuote,
@@ -330,18 +333,18 @@ TEST(TokenizerTest, Consume) {
 TEST(TokenizerTest, WhitespaceAndComments) {
   TurtleToken t;
   using c = TurtleTokenCtre;
-  ASSERT_TRUE(RE2::FullMatch(u8"  \t  \n", t.WsMultiple));
-  ASSERT_TRUE(RE2::FullMatch(u8"# theseareComme$#n  \tts\n", t.Comment));
-  ASSERT_TRUE(RE2::FullMatch(u8"#", u8"\\#"));
-  ASSERT_TRUE(RE2::FullMatch(u8"\n", u8"\\n"));
-  ASSERT_TRUE(ctre::match<c::WsMultiple>(u8"  \t  \n"));
-  ASSERT_TRUE(ctre::match<c::Comment>(u8"# theseareComme$#n  \tts\n"));
+  ASSERT_TRUE(RE2::FullMatch("  \t  \n", t.WsMultiple));
+  ASSERT_TRUE(RE2::FullMatch("# theseareComme$#n  \tts\n", t.Comment));
+  ASSERT_TRUE(RE2::FullMatch("#", "\\#"));
+  ASSERT_TRUE(RE2::FullMatch("\n", "\\n"));
+  ASSERT_TRUE(ctre::match<c::WsMultiple>("  \t  \n"));
+  ASSERT_TRUE(ctre::match<c::Comment>("# theseareComme$#n  \tts\n"));
   {
-    std::string s2(u8"#only Comment\n");
+    std::string s2("#only Comment\n");
     Tokenizer tok(s2);
     tok.skipComments();
     ASSERT_EQ(tok.data().begin() - s2.data(), 14);
-    std::string s(u8"    #comment of some way\n  start");
+    std::string s("    #comment of some way\n  start");
     tok.reset(s.data(), s.size());
     auto [success2, ws] = tok.getNextToken(tok._tokens.Comment);
     (void)ws;
@@ -351,11 +354,11 @@ TEST(TokenizerTest, WhitespaceAndComments) {
   }
 
   {
-    std::string s2(u8"#only Comment\n");
+    std::string s2("#only Comment\n");
     TokenizerCtre tok(s2);
     tok.skipComments();
     ASSERT_EQ(tok.data().begin() - s2.data(), 14);
-    std::string s(u8"    #comment of some way\n  start");
+    std::string s("    #comment of some way\n  start");
     tok.reset(s.data(), s.size());
     auto [success2, ws] = tok.getNextToken<TokId::Comment>();
     (void)ws;
@@ -365,141 +368,77 @@ TEST(TokenizerTest, WhitespaceAndComments) {
   }
 }
 
-TEST(TokenizerTest, normalizeRDFLiteral) {
+TEST(Escaping, normalizeRDFLiteral) {
   {
     std::string l1 = "\"simpleLiteral\"";
-    ASSERT_EQ(l1, TurtleToken::normalizeRDFLiteral(l1));
+    ASSERT_EQ(l1, RdfEscaping::normalizeRDFLiteral(l1));
     std::string l2 = "\'simpleLiteral\'";
-    ASSERT_EQ(l1, TurtleToken::normalizeRDFLiteral(l2));
+    ASSERT_EQ(l1, RdfEscaping::normalizeRDFLiteral(l2));
     std::string l3 = R"('''simpleLiteral''')";
-    ASSERT_EQ(l1, TurtleToken::normalizeRDFLiteral(l3));
+    ASSERT_EQ(l1, RdfEscaping::normalizeRDFLiteral(l3));
     std::string l4 = R"("""simpleLiteral""")";
-    ASSERT_EQ(l1, TurtleToken::normalizeRDFLiteral(l4));
+    ASSERT_EQ(l1, RdfEscaping::normalizeRDFLiteral(l4));
 
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l1)));
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l2)));
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l3)));
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l4)));
-  }
-  {
-    std::string l1 = "\"simpleLiteral\"@en-ca";
-    ASSERT_EQ(l1, TurtleToken::normalizeRDFLiteral(l1));
-    std::string l2 = "\'simpleLiteral\'@en-ca";
-    ASSERT_EQ(l1, TurtleToken::normalizeRDFLiteral(l2));
-    std::string l3 = R"('''simpleLiteral'''@en-ca)";
-    ASSERT_EQ(l1, TurtleToken::normalizeRDFLiteral(l3));
-    std::string l4 = R"("""simpleLiteral"""@en-ca)";
-    ASSERT_EQ(l1, TurtleToken::normalizeRDFLiteral(l4));
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l1)));
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l2)));
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l3)));
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l4)));
-  }
-  {
-    std::string l1 = "\"simpleLiteral\"^^xsd::boolean";
-    ASSERT_EQ(l1, TurtleToken::normalizeRDFLiteral(l1));
-    std::string l2 = "\'simpleLiteral\'^^xsd::boolean";
-    ASSERT_EQ(l1, TurtleToken::normalizeRDFLiteral(l2));
-    std::string l3 = R"('''simpleLiteral'''^^xsd::boolean)";
-    ASSERT_EQ(l1, TurtleToken::normalizeRDFLiteral(l3));
-    std::string l4 = R"("""simpleLiteral"""^^xsd::boolean)";
-    ASSERT_EQ(l1, TurtleToken::normalizeRDFLiteral(l4));
-
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l1)));
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l2)));
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l3)));
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l4)));
+    ASSERT_EQ(l1, RdfEscaping::escapeNewlinesAndBackslashes(
+                      RdfEscaping::normalizeRDFLiteral(l1)));
+    ASSERT_EQ(l1, RdfEscaping::escapeNewlinesAndBackslashes(
+                      RdfEscaping::normalizeRDFLiteral(l2)));
+    ASSERT_EQ(l1, RdfEscaping::escapeNewlinesAndBackslashes(
+                      RdfEscaping::normalizeRDFLiteral(l3)));
+    ASSERT_EQ(l1, RdfEscaping::escapeNewlinesAndBackslashes(
+                      RdfEscaping::normalizeRDFLiteral(l4)));
   }
 
   {
     std::string t = "\"si\"mple\'Li\n\rt\t\b\fer\\\"";
     std::string l1 = R"("si\"mple\'Li\n\rt\t\b\fer\\")";
-    ASSERT_EQ(t, TurtleToken::normalizeRDFLiteral(l1));
+    // only the newline and backslash characters are escaped
+    std::string lEscaped = "\"si\"mple\'Li\\n\rt\t\b\fer\\\\\"";
+    ASSERT_EQ(t, RdfEscaping::normalizeRDFLiteral(l1));
     std::string l2 = R"('si\"mple\'Li\n\rt\t\b\fer\\')";
-    ASSERT_EQ(t, TurtleToken::normalizeRDFLiteral(l2));
+    ASSERT_EQ(t, RdfEscaping::normalizeRDFLiteral(l2));
     std::string l3 = R"('''si\"mple\'Li\n\rt\t\b\fer\\''')";
-    ASSERT_EQ(t, TurtleToken::normalizeRDFLiteral(l3));
+    ASSERT_EQ(t, RdfEscaping::normalizeRDFLiteral(l3));
     std::string l4 = R"("""si\"mple\'Li\n\rt\t\b\fer\\""")";
-    ASSERT_EQ(t, TurtleToken::normalizeRDFLiteral(l4));
+    ASSERT_EQ(t, RdfEscaping::normalizeRDFLiteral(l4));
 
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(t));
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l1)));
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l2)));
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l3)));
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l4)));
-  }
-  {
-    std::string t = "\"si\"mple\'Li\n\rt\t\b\fer\\\"@de-us";
-    std::string l1 = R"("si\"mple\'Li\n\rt\t\b\fer\\"@de-us)";
-    ASSERT_EQ(t, TurtleToken::normalizeRDFLiteral(l1));
-    std::string l2 = R"('si\"mple\'Li\n\rt\t\b\fer\\'@de-us)";
-    ASSERT_EQ(t, TurtleToken::normalizeRDFLiteral(l2));
-    std::string l3 = R"('''si\"mple\'Li\n\rt\t\b\fer\\'''@de-us)";
-    ASSERT_EQ(t, TurtleToken::normalizeRDFLiteral(l3));
-    std::string l4 = R"("""si\"mple\'Li\n\rt\t\b\fer\\"""@de-us)";
-    ASSERT_EQ(t, TurtleToken::normalizeRDFLiteral(l4));
-
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(t));
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l1)));
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l2)));
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l3)));
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l4)));
+    ASSERT_EQ(lEscaped, RdfEscaping::escapeNewlinesAndBackslashes(t));
+    ASSERT_EQ(lEscaped, RdfEscaping::escapeNewlinesAndBackslashes(
+                            RdfEscaping::normalizeRDFLiteral(l1)));
+    ASSERT_EQ(lEscaped, RdfEscaping::escapeNewlinesAndBackslashes(
+                            RdfEscaping::normalizeRDFLiteral(l2)));
+    ASSERT_EQ(lEscaped, RdfEscaping::escapeNewlinesAndBackslashes(
+                            RdfEscaping::normalizeRDFLiteral(l3)));
+    ASSERT_EQ(lEscaped, RdfEscaping::escapeNewlinesAndBackslashes(
+                            RdfEscaping::normalizeRDFLiteral(l4)));
   }
 
-  {
-    std::string t = "\"si\"mple\'Li\n\rt\t\b\fer\\\"^^xsd::integer";
-    std::string l1 = R"("si\"mple\'Li\n\rt\t\b\fer\\"^^xsd::integer)";
-    ASSERT_EQ(t, TurtleToken::normalizeRDFLiteral(l1));
-    std::string l2 = R"('si\"mple\'Li\n\rt\t\b\fer\\'^^xsd::integer)";
-    ASSERT_EQ(t, TurtleToken::normalizeRDFLiteral(l2));
-    std::string l3 = R"('''si\"mple\'Li\n\rt\t\b\fer\\'''^^xsd::integer)";
-    ASSERT_EQ(t, TurtleToken::normalizeRDFLiteral(l3));
-    std::string l4 = R"("""si\"mple\'Li\n\rt\t\b\fer\\"""^^xsd::integer)";
-    ASSERT_EQ(t, TurtleToken::normalizeRDFLiteral(l4));
+  std::string lit = R"(",\")";
+  ASSERT_EQ(std::string("\",\\\\\""),
+            RdfEscaping::escapeNewlinesAndBackslashes(lit));
+}
 
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(t));
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l1)));
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l2)));
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l3)));
-    ASSERT_EQ(l1, TurtleToken::escapeRDFLiteral(
-                      TurtleToken::normalizeRDFLiteral(l4)));
+TEST(Escaping, unescapeIriref) {
+  // only numeric escapes \uxxxx and \UXoooXooo are allowed
+  {
+    std::string t = "<si\"mple\'Bärän>";
+    std::string l3 = "<si\"mple\'B\\u00E4r\\U000000E4n>";
+    ASSERT_EQ(t, RdfEscaping::unescapeIriref(l3));
+  }
+  {
+    std::string t = "<si\"mple\'Liää\n\rt\t\b\fer\\>";
+    std::string l3 = "<si\"mple\'Li\\u00E4ä\n\rt\t\b\fer\\\\>";
+    ASSERT_THROW(RdfEscaping::unescapeIriref(l3), std::runtime_error);
+  }
+  {
+    std::string t = "<si\"mple\'Liää\n\rt\t\b\fer\\>";
+    std::string l3 = "<si\"mple\'Li\\U000000E4ä\n\rt\t\b\fer\\\\>";
+    ASSERT_THROW(RdfEscaping::unescapeIriref(l3), std::runtime_error);
   }
 
   {
-    std::string t = "\"si\"mple\'Li\n\rt\t\b\fer\\\"^^xsd::integer";
-    std::string tEscaped = R"("si\"mple\'Li\n\rt\t\b\fer\\"^^xsd::integer)";
-    std::string l3 = "\"\"\"si\"mple\'Li\n\rt\t\b\fer\\\\\"\"\"^^xsd::integer";
-    ASSERT_EQ(t, TurtleToken::normalizeRDFLiteral(l3));
-    std::string l4 = "\'\'\'si\"mple\'Li\n\rt\t\b\fer\\\\\'\'\'^^xsd::integer";
-    ASSERT_EQ(t, TurtleToken::normalizeRDFLiteral(l4));
-
-    ASSERT_EQ(tEscaped, TurtleToken::escapeRDFLiteral(t));
-    ASSERT_EQ(tEscaped, TurtleToken::escapeRDFLiteral(
-                            TurtleToken::normalizeRDFLiteral(l3)));
-    ASSERT_EQ(tEscaped, TurtleToken::escapeRDFLiteral(
-                            TurtleToken::normalizeRDFLiteral(l4)));
+    std::string unterminated = "<noending";
+    ASSERT_THROW(RdfEscaping::unescapeIriref(unterminated),
+                 ad_semsearch::Exception);
   }
 }

@@ -10,7 +10,11 @@ static const size_t STXXL_MEMORY_TO_USE = 1024L * 1024L * 1024L * 2L;
 static const size_t STXXL_DISK_SIZE_INDEX_BUILDER = 1000 * 1000;
 static const size_t STXXL_DISK_SIZE_INDEX_TEST = 10;
 
-static const size_t NOF_SUBTREES_TO_CACHE = 1000;
+static constexpr size_t DEFAULT_MEM_FOR_QUERIES_IN_GB = 4;
+
+static const size_t DEFAULT_CACHE_MAX_NUM_ENTRIES = 1000;
+static const size_t DEFAULT_CACHE_MAX_SIZE_GB = 30;
+static const size_t DEFAULT_CACHE_MAX_SIZE_GB_SINGLE_ENTRY = 5;
 static const size_t MAX_NOF_ROWS_IN_RESULT = 100000;
 static const size_t MIN_WORD_PREFIX_SIZE = 4;
 static const char PREFIX_CHAR = '*';
@@ -76,12 +80,13 @@ static const std::string ERROR_IGNORE_CASE_UNSUPPORTED =
     "your settings.json and rebuild your index. You can optionally specify the "
     "\"locale\" key, otherwise \"en.US\" will be used as default";
 static const std::string WARNING_ASCII_ONLY_PREFIXES =
-    "You explicitly requested the ascii-prefixes-only settings or the ctre "
-    "regex engine for Tokenization. This means "
-    "that prefixes in the input Turtle may only use characters from "
-    "the ascii range. This is stricter than the Sparql standard but "
-    "makes parsing faster and works e.g. for wikidata dumps\n";
-
+    "You requested the CTRE parser for tokenization (either via "
+    "ascii-prefixes-only = true in the settings.json or by requesting it "
+    "explicitly in TurtleParserMain). This means that the input Turtle data "
+    "may only use characters from the ASCII range and that no escape sequences "
+    "may be used in prefixed names (e.g., rdfs:label\\,el is not allowed). "
+    "This is stricter than the SPARQL standard but makes parsing faster. It "
+    "works for many Turtle dumps, e.g. that from Wikidata.";
 static const std::string LOCALE_DEFAULT_LANG = "en";
 static const std::string LOCALE_DEFAULT_COUNTRY = "US";
 static constexpr bool LOCALE_DEFAULT_IGNORE_PUNCTUATION = false;
@@ -99,6 +104,20 @@ static constexpr uint8_t NUM_COMPRESSION_PREFIXES = 126;
 // compression has been applied to  a word
 static const uint8_t NO_PREFIX_CHAR =
     MIN_COMPRESSION_PREFIX + NUM_COMPRESSION_PREFIXES;
+
+// After performing this many "basic operations", we check for timeouts
+static constexpr size_t NUM_OPERATIONS_BETWEEN_TIMEOUT_CHECKS = 32000;
+// How many "basic operations" (see above) do we assume for a hashset or hashmap
+// operation
+static constexpr size_t NUM_OPERATIONS_HASHSET_LOOKUP = 32;
+
+// If the time estimate for a sort operation is larger by more than this factor
+// than the remaining time, then the sort is canceled with a timeout exception
+static constexpr double SORT_ESTIMATE_CANCELLATION_FACTOR = 3.0;
+
+// When initializing a sort performance estimator, at most this percentage of
+// the number of triples in the index is being sorted at once.
+static constexpr size_t PERCENTAGE_OF_TRIPLES_FOR_SORT_ESTIMATE = 5;
 
 #ifdef _PARALLEL_SORT
 static constexpr bool USE_PARALLEL_SORT = true;
