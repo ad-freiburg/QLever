@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 FROM base as builder
 RUN apt-get update && apt-get install -y build-essential cmake libsparsehash-dev libicu-dev tzdata
-RUN apt install libtbb-dev
+RUN apt install -y libtbb-dev
 COPY . /app/
 
 # Check formatting with the .clang-format project style
