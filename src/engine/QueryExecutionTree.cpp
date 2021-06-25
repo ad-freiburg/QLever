@@ -277,10 +277,12 @@ void QueryExecutionTree::writeTable(
       for (size_t j = 0; j < validIndices.size(); ++j) {
         if (validIndices[j]) {
           const auto& val = *validIndices[j];
-        out.write(reinterpret_cast<const char*>(&data(i, val.first)), sizeof(Id));
-      }
+          out.write(reinterpret_cast<const char*>(&data(i, val.first)),
+                    sizeof(Id));
+        }
       }
       return;
+    }
   }
   for (size_t i = from; i < upperBound; ++i) {
     for (size_t j = 0; j < validIndices.size(); ++j) {
