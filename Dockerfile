@@ -9,7 +9,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 FROM base as builder
 RUN apt-get update && apt-get install -y build-essential cmake libsparsehash-dev libicu-dev tzdata
-RUN apt install -y libtbb-dev
+RUN apt-get install -y libzstd-dev libtbb-dev
 COPY . /app/
 
 # Check formatting with the .clang-format project style
@@ -23,7 +23,7 @@ FROM base as runtime
 WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y wget python3-yaml unzip curl bzip2 pkg-config libicu-dev python3-icu libgomp1
-RUN apt install -y libtbb-dev
+RUN apt-get install -y libzstd-dev libtbb-dev
 
 ARG UID=1000
 RUN groupadd -r qlever && useradd --no-log-init -r -u $UID -g qlever qlever && chown qlever:qlever /app
