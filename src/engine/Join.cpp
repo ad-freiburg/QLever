@@ -757,7 +757,7 @@ void Join::parallelJoin(const IdTable& dynA, size_t jc1, const IdTable& dynB,
   };
 
   // TODO<joka921> Make this a proper parameter once we have the parameter-PR
-  const size_t minSizeForPart = 200000;
+  const size_t minSizeForPart = 50000;
 
   auto lowerAndUpperBound = [](const auto& input, const Range relevantRange,
                                size_t joinColumn, size_t needle) -> Range {
@@ -856,7 +856,7 @@ void Join::parallelJoin(const IdTable& dynA, size_t jc1, const IdTable& dynB,
                    &checkTimeoutAfterNCalls,
                    this](auto onlyCount, size_t i, size_t j, size_t iUpper,
                          size_t jUpper, size_t startOutput) -> size_t {
-    LOG(INFO) << "Start a task : " << i << " " << j << " " << startOutput
+    LOG(TRACE) << "Start a task : " << i << " " << j << " " << startOutput
               << std::endl;
     if (hasTimedOut) {
       return 0;
@@ -948,21 +948,26 @@ void Join::parallelJoin(const IdTable& dynA, size_t jc1, const IdTable& dynB,
       }
     }
   finish:
-    LOG(INFO) << "Inner join routine is finished" << std::endl;
     return totalCount;
   };
 
   if constexpr (USE_PARALLEL_SORT) {
     std::vector<size_t> sizesOfParts(parts.size(), 0);
+    std::vector<size_t> timesOfParts(parts.size(), 0);
 #pragma omp parallel
 #pragma omp single
     for (size_t i = 0; i < parts.size(); ++i) {
 #pragma omp task
       {
         const auto& part = parts[i];
+        ad_utility::Timer t;
+        t.start();
         sizesOfParts[i] =
             joinLoop(std::true_type{}, part.left.lower, part.right.lower,
                      part.left.upper, part.right.upper, 0);
+        t.stop();
+        LOG(INFO) << "Counting job took " << t.usecs() << "microseconds" <<'\n';
+
       }
     }
 
@@ -978,9 +983,13 @@ void Join::parallelJoin(const IdTable& dynA, size_t jc1, const IdTable& dynB,
 #pragma omp task
         {
           const auto& part = parts[i];
+          ad_utility::Timer t;
+          t.start();
           sizesOfParts[i] =
               joinLoop(std::false_type{}, part.left.lower, part.right.lower,
                        part.left.upper, part.right.upper, startOfOutput);
+          t.stop();
+          LOG(INFO) << "Joining job took " << t.usecs() << "microseconds" <<'\n';
         }
         startOfOutput += sizesOfParts[i];
       }
