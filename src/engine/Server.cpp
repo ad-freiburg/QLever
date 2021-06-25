@@ -346,8 +346,8 @@ string Server::createHttpResponse(const string& content,
      << "\r\n"
      << "Access-Control-Allow-Origin: *"
      << "\r\n"
-     << "\r\n"
-     << content;
+     << "\r\n";
+  os.write(content.data(), content.size());
   return os.str();
 }
 
