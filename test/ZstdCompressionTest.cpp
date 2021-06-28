@@ -5,6 +5,8 @@
 
 #include <gtest/gtest.h>
 #include "../src/util/CompressionUsingZstd/ZstdWrapper.h"
+#include "../src/util/WorkQueue.h"
+#include "../src/util/ThreadPool.h"
 
 
 TEST(CompressionTest, Basic) {
@@ -14,5 +16,7 @@ TEST(CompressionTest, Basic) {
   ZstdWrapper::compress(x.data(), x.size() * sizeof(int), [&comp](auto result){comp = std::move(result);});
   auto decomp = ZstdWrapper::decompress<int>(comp.data(), comp.size(), 4);
   ASSERT_EQ(x, decomp);
+
+  ZstdWrapper::compressInChunks(reinterpret_cast<char*>(x.data()), x.size() * sizeof(int), [&comp](auto result){comp = std::move(result);}, 4);
 
 }
