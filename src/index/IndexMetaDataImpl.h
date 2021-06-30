@@ -24,7 +24,8 @@ void IndexMetaData<MapType>::add(const FullRelationMetaData& rmd,
 
   off_t afterExpected =
       rmd.hasBlocks() ? bRmd._offsetAfter
-                      : static_cast<off_t>(rmd._startFullIndex + rmd.getNofBytesForFulltextIndex());
+                      : static_cast<off_t>(rmd._startFullIndex +
+                                           rmd.getNofBytesForFulltextIndex());
   if (rmd.hasBlocks()) {
     _blockData[rmd._relId] = bRmd;
   }
@@ -120,8 +121,10 @@ string IndexMetaData<MapType>::statistics() const {
 
   os << "# Elements:  " << _totalElements << '\n';
   os << "# Blocks:    " << _totalBlocks << "\n\n";
-  os << "Theoretical size of Id triples: " << _totalElements * 3 * sizeof(Id) << " bytes \n";
-  os << "Size of pair index:             " << totalPairIndexBytes << " bytes \n";
+  os << "Theoretical size of Id triples: " << _totalElements * 3 * sizeof(Id)
+     << " bytes \n";
+  os << "Size of pair index:             " << totalPairIndexBytes
+     << " bytes \n";
   os << "Total Size:                     " << _totalBytes << " bytes \n";
   os << "-------------------------------------------------------------------\n";
   return os.str();
@@ -140,7 +143,8 @@ size_t IndexMetaData<MapType>::getNofBlocksForRelation(const Id id) const {
 
 // _____________________________________________________________________________
 template <class MapType>
-size_t IndexMetaData<MapType>::getTotalBytesForRelation(const FullRelationMetaData& frmd) const {
+size_t IndexMetaData<MapType>::getTotalBytesForRelation(
+    const FullRelationMetaData& frmd) const {
   auto it = _blockData.find(frmd._relId);
   if (it != _blockData.end()) {
     return static_cast<size_t>(it->second._offsetAfter - frmd._startFullIndex);

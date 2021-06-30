@@ -231,7 +231,8 @@ void Server::process(Socket* client) {
         contentType =
             "text/tab-separated-values\r\n"
             "Content-Disposition: attachment;filename=export.tsv";
-      } else if (ad_utility::getLowercase(params["action"]) == "binary_export") {
+      } else if (ad_utility::getLowercase(params["action"]) ==
+                 "binary_export") {
         // binary export
         response = composeResponseSepValues(pq, qet, 'b');
         contentType =

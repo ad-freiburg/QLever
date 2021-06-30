@@ -282,7 +282,7 @@ void QueryExecutionTree::writeTable(
         }
       }
     }
-      return;
+    return;
   }
   for (size_t i = from; i < upperBound; ++i) {
     for (size_t j = 0; j < validIndices.size(); ++j) {

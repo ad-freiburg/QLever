@@ -8,14 +8,13 @@
 #include <thread>
 
 class ThreadPool {
-
  public:
   template <typename Function>
-  ThreadPool(size_t numThreads, Function function) : _threads(numThreads, {function}) {}
+  ThreadPool(size_t numThreads, Function function)
+      : _threads(numThreads, {function}) {}
 
  private:
   std::vector<std::jthread> _threads;
-
 };
 
 #endif  // QLEVER_THREADPOOL_H

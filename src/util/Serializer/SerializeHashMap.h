@@ -7,8 +7,7 @@
 
 #include "../../util/HashMap.h"
 
-template <typename Serializer, class K, class V, class HashFcn, class EqualKey,
-          class Alloc>
+template <typename Serializer, class K, class V, class HashFcn, class EqualKey, class Alloc>
 void serialize(Serializer& serializer,
                ad_utility::HashMap<K, V, HashFcn, EqualKey, Alloc>& hashMap) {
   if constexpr (Serializer::IsWriteSerializer) {

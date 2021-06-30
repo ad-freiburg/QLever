@@ -6,6 +6,7 @@
 #include <fstream>
 #include "../src/index/IndexMetaData.h"
 #include "../src/util/File.h"
+#include "../src/util/Serializer/FileSerializer.h"
 
 TEST(FullRelationMetaDataTest, testFunctionAndBlockFlagging) {
   FullRelationMetaData rmd(0, 0, 5, 1, 1, false, false);
@@ -106,20 +107,17 @@ TEST(RelationMetaDataTest, writeReadTest) {
     FullRelationMetaData rmdF(1, 0, 6, 1, 1, false, true);
     BlockBasedRelationMetaData rmdB(afterLhs, afterRhs, bs);
 
-    ad_utility::File f("_testtmp.rmd", "w");
-    f << rmdF << rmdB;
+    ad_utility::serialization::FileWriteSerializer f("_testtmp.rmd");
+    f& rmdF;
+    f& rmdB;
     f.close();
 
-    ad_utility::File in("_testtmp.rmd", "r");
-    unsigned char* buf =
-        new unsigned char[rmdF.bytesRequired() + rmdB.bytesRequired()];
-    in.read(buf, rmdF.bytesRequired() + rmdB.bytesRequired());
+    ad_utility::serialization::FileReadSerializer in("_testtmp.rmd");
     FullRelationMetaData rmdF2;
-    rmdF2.createFromByteBuffer(buf);
     BlockBasedRelationMetaData rmdB2;
-    rmdB2.createFromByteBuffer(buf + rmdF.bytesRequired());
+    in& rmdF2;
+    in& rmdB2;
 
-    delete[] buf;
     remove("_testtmp.rmd");
 
     ASSERT_EQ(rmdF._relId, rmdF2._relId);

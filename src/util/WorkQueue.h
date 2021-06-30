@@ -5,16 +5,17 @@
 #ifndef QLEVER_WORKQUEUE_H
 #define QLEVER_WORKQUEUE_H
 
-#include <deque>
 #include <condition_variable>
-#include <type_traits>
+#include <deque>
 #include <queue>
+#include <type_traits>
 #include "Synchronized.h"
 
 namespace ad_utility {
 
-inline auto constantZeroDummy = [](auto&&...) {return 0ull;};
-template <typename T, bool isOrdered = false, typename GetIndex = decltype(constantZeroDummy)>
+inline auto constantZeroDummy = [](auto&&...) { return 0ull; };
+template <typename T, bool isOrdered = false,
+          typename GetIndex = decltype(constantZeroDummy)>
 class WorkQueue {
  private:
   static constexpr size_t unlimited = size_t(-2);
@@ -24,7 +25,9 @@ class WorkQueue {
     return GetIndex{}(a) > GetIndex{}(b);
   };
 
-  using Container = std::conditional_t<isOrdered, std::priority_queue<T, std::vector<T>, decltype(comparator)>, std::deque<T>>;
+  using Container = std::conditional_t<
+      isOrdered, std::priority_queue<T, std::vector<T>, decltype(comparator)>,
+      std::deque<T>>;
   Container _deque;
   std::mutex _mutex;
   std::condition_variable _conditionVariableMayPush;
@@ -57,9 +60,7 @@ class WorkQueue {
     }
   }
 
-
  public:
-
   WorkQueue(size_t maxSize = unlimited) : _maxSize{maxSize} {}
 
   void push(T value) {
@@ -76,8 +77,11 @@ class WorkQueue {
   std::optional<T> pop() {
     std::unique_lock lock{_mutex};
     if constexpr (isOrdered) {
-      _conditionVariableMayPop.wait(
-          lock, [&] { return (!_deque.empty() && GetIndex{}(_deque.top()) == _numberOfElementsPopped) || _isFinished; });
+      _conditionVariableMayPop.wait(lock, [&] {
+        return (!_deque.empty() &&
+                GetIndex{}(_deque.top()) == _numberOfElementsPopped) ||
+               _isFinished;
+      });
 
     } else {
       _conditionVariableMayPop.wait(
@@ -106,6 +110,6 @@ class WorkQueue {
     _conditionVariableMayPop.notify_one();
   }
 };
-} // namespace ad_utility
+}  // namespace ad_utility
 
 #endif  // QLEVER_WORKQUEUE_H

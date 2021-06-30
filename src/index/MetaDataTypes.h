@@ -68,7 +68,7 @@ class FullRelationMetaData {
   size_t getNofElements() const;
 
   // The size this object will require when serialized to file.
-  //size_t bytesRequired() const;
+  // size_t bytesRequired() const;
 
   off_t getStartOfLhs() const;
 
@@ -104,7 +104,7 @@ class BlockBasedRelationMetaData {
                              const vector<BlockMetaData>& blocks);
 
   // The size this object will require when serialized to file.
-  //size_t bytesRequired() const;
+  // size_t bytesRequired() const;
 
   // Takes a LHS and returns the offset into the file at which the
   // corresponding block can be read as well as the nof bytes to read.
