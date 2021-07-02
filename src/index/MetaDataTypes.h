@@ -60,10 +60,10 @@ class FullRelationMetaData {
 
   void setHasBlocks(bool hasBlocks);
 
-  void setCol1LogMultiplicity(uint8_t mult);
-  void setCol2LogMultiplicity(uint8_t mult);
-  uint8_t getCol1LogMultiplicity() const;
-  uint8_t getCol2LogMultiplicity() const;
+  void setCol1Multiplicity(double mult);
+  void setCol2Multiplicity(double mult);
+  double getCol1Multiplicity() const;
+  double getCol2Multiplicity() const;
 
   size_t getNofElements() const;
 
@@ -153,12 +153,12 @@ class RelationMetaData {
 
   size_t getNofElements() const { return _rmdPairs.getNofElements(); }
 
-  uint8_t getCol1LogMultiplicity() const {
-    return _rmdPairs.getCol1LogMultiplicity();
+  double getCol1Multiplicity() const {
+    return _rmdPairs.getCol1Multiplicity();
   }
 
-  uint8_t getCol2LogMultiplicity() const {
-    return _rmdPairs.getCol2LogMultiplicity();
+  double getCol2Multiplicity() const {
+    return _rmdPairs.getCol2Multiplicity();
   }
 
   const FullRelationMetaData& _rmdPairs;

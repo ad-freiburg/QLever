@@ -25,6 +25,15 @@ class ZstdWrapper {
     whatToDoWithResult(std::move(result));
   }
 
+  static std::vector<char> compressAndReturn (void* src, size_t numBytes, int compressionLevel = 3) {
+    std::vector<char> result;
+    auto toResult = [&](std::vector<char> passedResult) {
+      result = std::move(passedResult);
+    };
+    compress(src, numBytes, toResult, compressionLevel);
+    return result;
+  }
+
   template <typename Callback>
   static void compressInChunks(char* src, size_t numBytes,
                                Callback whatToDoWithResult, size_t numThreads,
@@ -100,5 +109,16 @@ class ZstdWrapper {
         ZSTD_decompress(result.data(), knownOriginalSize, src, numBytes);
     AD_CHECK(compressedSize == knownOriginalSize);
     return result;
+  }
+
+  template <typename T>
+  requires(std::is_trivially_copyable_v<T>) static size_t decompressToBuffer(
+      void* src, size_t numBytes, T* buffer, size_t bufferCapacity) {
+    auto decompressedSize =
+        ZSTD_decompress(buffer, bufferCapacity * sizeof(T), src, numBytes);
+    if (ZSTD_isError(decompressedSize)) {
+      throw std::runtime_error(std::string("error during decompression : ") + ZSTD_getErrorName(decompressedSize));
+    }
+    return decompressedSize / sizeof(T);
   }
 };
