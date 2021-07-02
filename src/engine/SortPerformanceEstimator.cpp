@@ -56,8 +56,7 @@ double SortPerformanceEstimator::measureSortingTimeInSeconds(
 }
 
 // ____________________________________________________________________________
-SortPerformanceEstimator::SortPerformanceEstimator(
-    const ad_utility::AllocatorWithLimit<Id>& allocator,
+SortPerformanceEstimator::SortPerformanceEstimator(const ad_utility::AllocatorWithLimit<Id>& allocator,
     size_t maxNumElementsToSort) {
   computeEstimatesExpensively(allocator, maxNumElementsToSort);
 }

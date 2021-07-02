@@ -4,6 +4,7 @@
 
 #include <re2/re2.h>
 #include <iostream>
+#include <memory>
 #include <string>
 
 struct SparqlToken {
@@ -34,49 +35,25 @@ struct SparqlToken {
 };
 
 class SparqlLexer {
- private:
-  // The rules for the lexer
-  static const std::string IRIREF;
-  static const std::string IRI;
-  static const std::string PN_CHARS_BASE;
-  static const std::string PN_CHARS_U;
-  static const std::string PN_CHARS;
-  static const std::string PN_PREFIX;
-  static const std::string PLX;
-  static const std::string PN_LOCAL;
-  static const std::string VARNAME;
-  static const std::string WS;
-  static const std::string GROUP_BY;
-  static const std::string ORDER_BY;
-  static const std::string KEYWORD;
-  static const std::string VARIABLE;
-  static const std::string SYMBOL;
-  static const std::string AGGREGATE;
-  static const std::string ECHAR;
-  static const std::string LANGTAG;
-  static const std::string STRING_LITERAL;
-  static const std::string RDFLITERAL;
-  static const std::string PNAME_NS;
-  static const std::string PNAME_LN;
-  static const std::string INTEGER;
-  static const std::string FLOAT;
-  static const std::string LOGICAL_OR;
+ public:
+  using RegexTokenMap =
+      std::vector<std::pair<std::unique_ptr<re2::RE2>, SparqlToken::Type>>;
 
-  static const re2::RE2 RE_IRI;
-  static const re2::RE2 RE_WS;
-  static const re2::RE2 RE_GROUP_BY;
-  static const re2::RE2 RE_ORDER_BY;
-  static const re2::RE2 RE_KEYWORD;
-  static const re2::RE2 RE_VARIABLE;
-  static const re2::RE2 RE_SYMBOL;
-  static const re2::RE2 RE_AGGREGATE;
-  static const re2::RE2 RE_RDFLITERAL;
-  static const re2::RE2 RE_INTEGER;
-  static const re2::RE2 RE_FLOAT;
-  static const re2::RE2 RE_LOGICAL_OR;
+ private:
+  const RegexTokenMap& getRegexTokenMap() const;
 
  public:
   SparqlLexer(const std::string& sparql);
+
+  // Copying and moving is disallowed, the default behavior is wrong,
+  // and we don't need it.
+  SparqlLexer(const SparqlLexer&) = delete;
+  SparqlLexer& operator=(const SparqlLexer&) = delete;
+  SparqlLexer(SparqlLexer&&) noexcept = delete;
+  SparqlLexer& operator=(SparqlLexer&&) = delete;
+
+  // Explicitly reset this Lexer to a new input
+  void reset(std::string sparql);
 
   // True if the entire input stream was consumed
   bool empty() const;
@@ -96,10 +73,16 @@ class SparqlLexer {
   const SparqlToken& current();
   const std::string& input() const;
 
+  // Get the part of the input that has not yet been consumed by calls to
+  // `accept` or `expect`
+  std::string getUnconsumedInput() {
+    return _next.raw + " " + _re_string.ToString();
+  }
+
  private:
   void readNext();
 
-  const std::string _sparql;
+  std::string _sparql;
   re2::StringPiece _re_string;
   SparqlToken _current;
   SparqlToken _next;
