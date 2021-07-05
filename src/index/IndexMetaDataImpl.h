@@ -25,10 +25,11 @@ void IndexMetaData<MapType>::add(AddType addedValue) {
     }
   }
 
-  if constexpr(isUncompressed) {
+  if constexpr (isUncompressed) {
     const auto& rmd = addedValue.first;
     const auto& bRmd = addedValue.second;
-    // TODO is the offsetAfter-business needed, or can we just say file.tell() in the respective places
+    // TODO is the offsetAfter-business needed, or can we just say file.tell()
+    // in the respective places
     off_t afterExpected =
         rmd.hasBlocks() ? bRmd._offsetAfter
                         : static_cast<off_t>(rmd._startFullIndex +
@@ -50,7 +51,8 @@ off_t IndexMetaData<MapType>::getOffsetAfter() const {
 
 // _____________________________________________________________________________
 template <class MapType>
-typename IndexMetaData<MapType>::GetType IndexMetaData<MapType>::getRmd(Id relId) const {
+typename IndexMetaData<MapType>::GetType IndexMetaData<MapType>::getRmd(
+    Id relId) const {
   if constexpr (std::is_same_v<const RelationMetaData, GetType>) {
     const FullRelationMetaData& full = _data.getAsserted(relId);
     RelationMetaData ret(full);
@@ -155,8 +157,7 @@ size_t IndexMetaData<MapType>::getNofBlocksForRelation(const Id id) const {
 
 // _____________________________________________________________________________
 template <class MapType>
-size_t IndexMetaData<MapType>::getTotalBytesForRelation(
-    Id id) const {
+size_t IndexMetaData<MapType>::getTotalBytesForRelation(Id id) const {
   if constexpr (isUncompressed) {
     const auto& frmd = _data.getAsserted(id);
     auto it = _blockData.find(id);

@@ -153,13 +153,9 @@ class RelationMetaData {
 
   size_t getNofElements() const { return _rmdPairs.getNofElements(); }
 
-  double getCol1Multiplicity() const {
-    return _rmdPairs.getCol1Multiplicity();
-  }
+  double getCol1Multiplicity() const { return _rmdPairs.getCol1Multiplicity(); }
 
-  double getCol2Multiplicity() const {
-    return _rmdPairs.getCol2Multiplicity();
-  }
+  double getCol2Multiplicity() const { return _rmdPairs.getCol2Multiplicity(); }
 
   const FullRelationMetaData& _rmdPairs;
   const BlockBasedRelationMetaData* _rmdBlocks;

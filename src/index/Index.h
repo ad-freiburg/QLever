@@ -19,16 +19,16 @@
 #include "../parser/TsvParser.h"
 #include "../parser/TurtleParser.h"
 #include "../util/BufferedVector.h"
+#include "../util/CompressionUsingZstd/ZstdWrapper.h"
 #include "../util/File.h"
 #include "../util/HashMap.h"
 #include "../util/MmapVector.h"
 #include "../util/Timer.h"
-#include "../util/CompressionUsingZstd/ZstdWrapper.h"
+#include "./CompressedRelation.h"
 #include "./ConstantsIndexCreation.h"
 #include "./DocsDB.h"
 #include "./IndexBuilderTypes.h"
 #include "./IndexMetaData.h"
-#include "./CompressedRelation.h"
 #include "./Permutations.h"
 #include "./StxxlSortFunctors.h"
 #include "./TextMetaData.h"
@@ -375,7 +375,6 @@ class Index {
   template <class Permutation>
   void scan(Id key, IdTable* result, const Permutation& p,
             ad_utility::SharedConcurrentTimeoutTimer timer = nullptr) const {
-
     if constexpr (p._meta.isUncompressed) {
       if (p._meta.relationExists(key)) {
         const FullRelationMetaData& rmd = p._meta.getRmd(key)._rmdPairs;
@@ -391,10 +390,13 @@ class Index {
         std::vector<char> compressedBuffer;
         Id* position = result->data();
         size_t spaceLeft = result->size() * result->cols();
-        for (const auto& block: rmd._blocks) {
+        for (const auto& block : rmd._blocks) {
           compressedBuffer.resize(block._compressedSize);
-          p._file.read(compressedBuffer.data(), block._compressedSize, block._offsetInFile);
-          auto numElementsRead = ZstdWrapper::decompressToBuffer(compressedBuffer.data(), compressedBuffer.size(), position, block._numberOfElements * 2);
+          p._file.read(compressedBuffer.data(), block._compressedSize,
+                       block._offsetInFile);
+          auto numElementsRead = ZstdWrapper::decompressToBuffer(
+              compressedBuffer.data(), compressedBuffer.size(), position,
+              block._numberOfElements * 2);
           AD_CHECK(numElementsRead <= spaceLeft);
           spaceLeft -= numElementsRead;
           position += numElementsRead;
@@ -445,12 +447,17 @@ class Index {
   template <class PermutationInfo>
   void scan(const string& keyFirst, const string& keySecond, IdTable* result,
             const PermutationInfo& p) const {
+    Id relId;
+    Id subjId;
+    if (!_vocab.getId(keyFirst, &relId) || !_vocab.getId(keySecond, &subjId)) {
+      LOG(DEBUG) << "Key " << keyFirst << " or key " << keySecond
+                 << " were not found in the vocabulary \n";
+      return;
+    }
 
     if constexpr (p._meta.isUncompressed) {
       LOG(DEBUG) << "Performing " << p._readableName << "  scan of relation "
                  << keyFirst << " with fixed subject: " << keySecond << "...\n";
-      Id relId;
-      Id subjId;
       if (_vocab.getId(keyFirst, &relId) && _vocab.getId(keySecond, &subjId)) {
         if (p._meta.relationExists(relId)) {
           auto rmd = p._meta.getRmd(relId);
@@ -485,7 +492,51 @@ class Index {
       }
       LOG(DEBUG) << "Scan done, got " << result->size() << " elements.\n";
     } else {
-      throw std::runtime_error ("Scanning from compressed relations is not yet supported");
+      if (p._meta.relationExists(relId)) {
+        const auto& rmd = p._meta.getRmd(relId);
+        const auto [firstBlock, lastBlock] =
+            rmd.getRelevantBlockIndices(subjId);
+
+        size_t numElementsInBlocks = 0;
+        for (auto begin = firstBlock; begin != lastBlock; ++begin) {
+          numElementsInBlocks += begin->_numberOfElements;
+        }
+        using P = std::pair<Id, Id>;
+        using Alloc = ad_utility::AllocatorWithLimit<P>;
+        std::vector<P, Alloc> twoColumnBuffer(
+            numElementsInBlocks, result->getAllocator().template as<P>());
+        std::vector<char> compressedBuffer;
+        Id* position = &(twoColumnBuffer.data()->first);
+        size_t spaceLeft = numElementsInBlocks * 2;
+        for (auto begin = firstBlock; begin != lastBlock; ++begin) {
+          const auto& block = *begin;
+          compressedBuffer.resize(block._compressedSize);
+          p._file.read(compressedBuffer.data(), block._compressedSize,
+                       block._offsetInFile);
+          auto numElementsRead = ZstdWrapper::decompressToBuffer(
+              compressedBuffer.data(), compressedBuffer.size(), position,
+              block._numberOfElements * 2);
+          AD_CHECK(numElementsRead <= spaceLeft);
+          spaceLeft -= numElementsRead;
+          position += numElementsRead;
+        }
+        AD_CHECK(spaceLeft == 0);
+
+        P dummy{subjId, 0};
+
+        auto [beg, end] = std::equal_range(
+            twoColumnBuffer.begin(), twoColumnBuffer.end(), dummy,
+            [](const auto& a, const auto& b) { return a.first < b.first; });
+        auto resultStatic = result->template moveToStatic<1>();
+        resultStatic.resize(end - beg);
+
+        size_t i = 0;
+        for (; beg != end; ++beg) {
+          resultStatic(i++, 0) = beg->second;
+        }
+
+        *result = resultStatic.moveToDynamic();
+      }
     }
   }
 
@@ -579,9 +630,8 @@ class Index {
                             size_t c2);
 
   template <typename T>
-  T writeSwitchedRel(
-      ad_utility::File* out, off_t lastOffset, Id currentRel,
-      ad_utility::BufferedVector<array<Id, 2>>* buffer);
+  T writeSwitchedRel(ad_utility::File* out, off_t lastOffset, Id currentRel,
+                     ad_utility::BufferedVector<array<Id, 2>>* buffer);
 
   // _______________________________________________________________________
   // Create a pair of permutations. Only works for valid pairs (PSO-POS,
@@ -680,21 +730,21 @@ class Index {
   //   The Meta Data (Permutation offsets) for this relation,
   //   Careful: only multiplicity for first column is valid in return value
   template <typename T>
-  static T writeRel(
-      ad_utility::File& out, off_t currentOffset, Id relId,
-      const BufferedVector<array<Id, 2>>& data, size_t distinctC1,
-      bool functional) {
+  static T writeRel(ad_utility::File& out, off_t currentOffset, Id relId,
+                    const BufferedVector<array<Id, 2>>& data, size_t distinctC1,
+                    bool functional) {
     if constexpr (std::is_same_v<T, CompressedRelationMetaData>) {
       return writeCompressedRel(out, relId, data, distinctC1, functional);
     } else {
-      return writeUncompressedRel(out, currentOffset, relId, data, distinctC1, functional);
+      return writeUncompressedRel(out, currentOffset, relId, data, distinctC1,
+                                  functional);
     }
   }
 
-  static pair<FullRelationMetaData, BlockBasedRelationMetaData> writeUncompressedRel(
-      ad_utility::File& out, off_t currentOffset, Id relId,
-      const BufferedVector<array<Id, 2>>& data, size_t distinctC1,
-      bool functional);
+  static pair<FullRelationMetaData, BlockBasedRelationMetaData>
+  writeUncompressedRel(ad_utility::File& out, off_t currentOffset, Id relId,
+                       const BufferedVector<array<Id, 2>>& data,
+                       size_t distinctC1, bool functional);
   static CompressedRelationMetaData writeCompressedRel(
       ad_utility::File& out, Id relId,
       const ad_utility::BufferedVector<array<Id, 2>>& data, size_t distinctC1,

@@ -83,10 +83,14 @@ class IndexMetaData {
   typedef M MapType;
   using value_type = typename MapType::value_type;
 
-  constexpr static bool isUncompressed = std::is_same_v<value_type, FullRelationMetaData>;
-  using AddType = std::conditional_t<isUncompressed, std::pair<FullRelationMetaData, BlockBasedRelationMetaData>, CompressedRelationMetaData>;
-  using GetType = std::conditional_t<isUncompressed, const RelationMetaData, const CompressedRelationMetaData&>;
-
+  constexpr static bool isUncompressed =
+      std::is_same_v<value_type, FullRelationMetaData>;
+  using AddType = std::conditional_t<
+      isUncompressed,
+      std::pair<FullRelationMetaData, BlockBasedRelationMetaData>,
+      CompressedRelationMetaData>;
+  using GetType = std::conditional_t<isUncompressed, const RelationMetaData,
+                                     const CompressedRelationMetaData&>;
 
   // some MapTypes (the dense ones using stxxl or mmap) require additional calls
   // to setup() before being fully initialized
@@ -183,8 +187,8 @@ class IndexMetaData {
 
   // friend declaration for external converter function with ugly types
   //  using IndexMetaDataHmap = IndexMetaData<MetaDataWrapperHashMap>;
-  using IndexMetaDataHmap = IndexMetaData<
-      MetaDataWrapperHashMap<ad_utility::HashMap<Id, CompressedRelationMetaData>>>;
+  using IndexMetaDataHmap = IndexMetaData<MetaDataWrapperHashMap<
+      ad_utility::HashMap<Id, CompressedRelationMetaData>>>;
   using IndexMetaDataMmap = IndexMetaData<
       MetaDataWrapperDense<ad_utility::MmapVector<FullRelationMetaData>>>;
   friend IndexMetaDataMmap convertHmapMetaDataToMmap(const IndexMetaDataHmap&,
