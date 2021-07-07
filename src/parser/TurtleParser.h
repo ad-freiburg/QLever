@@ -7,11 +7,13 @@
 
 #include <gtest/gtest.h>
 #include <sys/mman.h>
+
 #include <codecvt>
 #include <exception>
 #include <future>
 #include <locale>
 #include <string_view>
+
 #include "../global/Constants.h"
 #include "../index/ConstantsIndexCreation.h"
 #include "../util/Exception.h"
@@ -19,6 +21,7 @@
 #include "../util/HashMap.h"
 #include "../util/Log.h"
 #include "./Tokenizer.h"
+#include "./TokenizerCtre.h"
 #include "ParallelBuffer.h"
 
 using std::string;
@@ -170,9 +173,9 @@ class TurtleParser {
   // Terminal symbols from the grammar
   // Behavior of the functions is similar to the nonterminals (see above)
   bool iriref();
-  bool integer() { return parseTerminal<TokId::Integer>(); }
-  bool decimal() { return parseTerminal<TokId::Decimal>(); }
-  bool doubleParse() { return parseTerminal<TokId::Double>(); }
+  bool integer() { return parseTerminal<TurtleTokenId::Integer>(); }
+  bool decimal() { return parseTerminal<TurtleTokenId::Decimal>(); }
+  bool doubleParse() { return parseTerminal<TurtleTokenId::Double>(); }
 
   /// this version only works if no escape sequences were used.
   bool pnameLnRelaxed();
@@ -181,11 +184,11 @@ class TurtleParser {
   bool pnameNS();
 
   // __________________________________________________________________________
-  bool langtag() { return parseTerminal<TokId::Langtag>(); }
+  bool langtag() { return parseTerminal<TurtleTokenId::Langtag>(); }
   bool blankNodeLabel();
 
   bool anon() {
-    if (!parseTerminal<TokId::Anon>()) {
+    if (!parseTerminal<TurtleTokenId::Anon>()) {
       return false;
     }
     _lastParseResult = createAnonNode();
@@ -193,7 +196,7 @@ class TurtleParser {
   }
 
   // Skip a given regex without parsing it
-  template <TokId reg>
+  template <TurtleTokenId reg>
   bool skip() {
     _tok.skipWhitespaceAndComments();
     return _tok.template skip<reg>();
@@ -203,7 +206,7 @@ class TurtleParser {
   // put the matching prefix into _lastParseResult, move the input position
   // forward by the length of the match and return true else return false and do
   // not change the parser's state
-  template <TokId terminal, bool SkipWhitespaceBefore = true>
+  template <TurtleTokenId terminal, bool SkipWhitespaceBefore = true>
   bool parseTerminal();
 
   // ______________________________________________________________________________________
